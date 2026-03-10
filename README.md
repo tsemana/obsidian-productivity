@@ -6,9 +6,9 @@ An Obsidian-native productivity system for Cowork. Combines task management, wor
 
 This plugin gives Claude a persistent understanding of your work, stored in your Obsidian vault:
 
-- **Task management** — A markdown task list (`TASKS.md`) with wikilinks to people, projects, and notes. Claude reads, writes, and triages tasks, syncing with external tools.
+- **Task management** — Every task is its own note in `tasks/` with frontmatter properties (status, priority, due, context). View and filter tasks through Obsidian Bases. Completed tasks archive to `tasks/done/`.
 - **Workplace memory** — A two-tier memory system that teaches Claude your shorthand. People, projects, and terminology are stored as proper Obsidian notes with frontmatter, aliases, and wikilinks.
-- **Visual dashboard** — A local HTML file for board-view task management and memory overview.
+- **Dual-context support** — Use the same vault from separate work and personal Claude accounts. Tasks, memories, and notes are auto-tagged by context and filterable through Bases views.
 - **Obsidian markdown** — Proper Obsidian Flavored Markdown with wikilinks, callouts, embeds, properties, and more.
 - **Obsidian Bases** — Database-like views over your vault notes (tasks, projects, people directories).
 - **JSON Canvas** — Visual canvases for brainstorming, project mapping, and flowcharts.
@@ -21,7 +21,7 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | Command | What it does |
 |---------|--------------|
 | `/vault-init` | Configure Obsidian vault settings (core plugins, daily notes, templates, wikilinks) |
-| `/start` | Initialize vault structure, tasks, memory, templates, Bases, and dashboard |
+| `/start` | Initialize vault structure, tasks, memory, templates, and Bases views |
 | `/update` | Triage stale items, check memory for gaps, sync from external tools |
 | `/update --comprehensive` | Deep scan email, calendar, chat — flag missed todos and suggest new memories |
 
@@ -30,7 +30,7 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | Skill | Description |
 |-------|-------------|
 | `memory-management` | Two-tier memory with Obsidian wikilinks and frontmatter aliases |
-| `task-management` | Markdown tasks with wikilinks to people, projects, and notes |
+| `task-management` | Individual task notes with frontmatter, viewed through Bases |
 | `vault-workflow` | Vault structure, daily notes, templates, and Bases views |
 | `obsidian-markdown` | Obsidian Flavored Markdown syntax (wikilinks, callouts, embeds, properties) |
 | `obsidian-bases` | Obsidian Bases files for database-like views |
@@ -49,9 +49,9 @@ If you don't have Obsidian yet:
 3. **Create a folder** on your computer where you want your vault to live (e.g., `~/Documents/MyVault`)
 4. **Start a Cowork session** and select that folder
 5. **Run `/vault-init`** — this creates the `.obsidian/` config folder with the right settings (daily notes, templates, wikilinks, core plugins all pre-configured)
-6. **Run `/start`** — this creates the vault structure (folders, templates, Bases views, TASKS.md, CLAUDE.md, memory system, and dashboard)
+6. **Run `/start`** — this creates the vault structure (folders, templates, Bases views, task folder, CLAUDE.md, and memory system)
 7. **Open the folder in Obsidian** — go to File → Open Vault → "Open folder as vault" and select your folder. Everything will be configured and ready.
-8. **Explore** — check the graph view to see how people, projects, and tasks connect. Try creating a daily note (click the calendar icon in the sidebar).
+8. **Explore** — check the graph view to see how people, projects, and tasks connect. Open `bases/tasks.base` for your task board.
 
 ### Option B: Existing Obsidian Vault
 
@@ -68,7 +68,7 @@ If you already use Obsidian:
 
 Once the vault is initialized, your workflow looks like this:
 
-- **In Obsidian** — browse notes, explore the graph view, use Bases for dashboard views, create daily notes, link ideas together
+- **In Obsidian** — browse notes, explore the graph view, use Bases for task/project/people views, create daily notes, link ideas together
 - **In Cowork** — ask Claude to manage tasks, decode shorthand, sync with email/calendar/chat, create project notes, update memory
 - **Run `/update`** periodically to keep tasks and memory current
 - **Run `/update --comprehensive`** for a deep scan of your communications to catch missed todos and discover new people/projects
@@ -84,4 +84,4 @@ See [CONNECTORS.md](CONNECTORS.md) for details on supported tools and alternativ
 ## Credits
 
 - Obsidian skills (obsidian-markdown, obsidian-bases, json-canvas, obsidian-cli, defuddle) by [Steph Ango / kepano](https://github.com/kepano/obsidian-skills)
-- Productivity system (task management, memory management, dashboard) by Anthropic
+- Productivity system (task management, memory management) by Anthropic

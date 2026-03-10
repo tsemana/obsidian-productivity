@@ -1,160 +1,168 @@
 ---
 name: task-management
 description: >
-  Obsidian-native task management using a shared TASKS.md file with wikilinks to people, projects,
-  and notes. Reference this when the user asks about their tasks, wants to add/complete tasks, or
-  needs help tracking commitments. Tasks link into the vault's memory system and can be viewed
-  through Obsidian Bases.
+  Obsidian-native task management using individual task notes in a tasks/ folder.
+  Each task is its own note with frontmatter properties (status, priority, due, context, project).
+  Tasks are viewed and filtered through Obsidian Bases. Reference this when the user asks about
+  their tasks, wants to add/complete tasks, or needs help tracking commitments. Tasks link into
+  the vault's memory system via wikilinks.
 ---
 
 # Task Management (Obsidian-Native)
 
-Tasks are tracked in a simple `TASKS.md` file that both you and the user can edit. Tasks use wikilinks to connect to people, projects, and notes in the vault.
+Every task is its own note in the `tasks/` folder. Completed tasks move to `tasks/done/`. Tasks are viewed through Obsidian Bases, which provide filtered, sorted, grouped views over the task notes.
 
-## File Location
+## Folder Structure
 
-**Always use `TASKS.md` in the current working directory (vault root).**
+```
+tasks/                  ← Active, waiting, and someday tasks
+  review-budget.md
+  book-dentist.md
+  draft-q2-roadmap.md
+tasks/done/             ← Completed tasks (archived)
+  submit-expense-report.md
+```
 
-- If it exists, read/write to it
-- If it doesn't exist, create it with the template below
+## Task Note Format
 
-## Dashboard Setup (First Run)
-
-A visual dashboard is available for managing tasks and memory. **On first interaction with tasks:**
-
-1. Check if `dashboard.html` exists in the current working directory
-2. If not, copy it from `${CLAUDE_PLUGIN_ROOT}/dashboard.html` to the current working directory
-3. Inform the user: "I've added the dashboard. Run `/start` to set up the full system."
-
-The task board:
-- Reads and writes to the same `TASKS.md` file
-- Auto-saves changes
-- Watches for external changes (syncs when you edit via CLI)
-- Supports drag-and-drop reordering of tasks and sections
-
-## Format & Template
-
-When creating a new TASKS.md, use this exact template (without example tasks):
+Every task note uses this frontmatter structure:
 
 ```markdown
 ---
-title: Tasks
-tags:
-  - dashboard
+title: Review budget proposal
 aliases:
-  - Task List
-  - Todo
+  - budget review
+tags:
+  - task
+context: work
+status: active
+priority: medium
+due: 2026-03-14
+assigned-to: "[[Sarah Chen|Sarah]]"
+project: "[[Project Phoenix]]"
+created: 2026-03-10
 ---
 
-# Tasks
+# Review budget proposal
 
-## Active
+For [[Sarah Chen|Sarah]], need to finalize before Q2 planning.
 
-## Waiting On
+## Subtasks
+- [ ] Pull latest numbers from finance
+- [ ] Compare against Q1 actuals
+- [ ] Send draft to [[Todd Martinez|Todd]] for review
 
-## Someday
+## Blockers
+- Waiting on [[Todd Martinez|Todd]] for cost estimate
 
-## Done
+## Related
+- [[Q2 Budget Draft]]
+- [[2026-03-08]] — discussed in standup
+
+## Log
+- 2026-03-10: Created, waiting on Todd's numbers
 ```
 
-Task format:
-- `- [ ] **Task title** — context, for [[Person]], due date`
-- Sub-bullets for additional details
-- Use `[[wikilinks]]` for people and projects
-- Completed: `- [x] ~~Task~~ (date)`
+### Frontmatter Properties
 
-### Dual-Context Vaults
+| Property | Values | Required |
+|----------|--------|----------|
+| `title` | Task name | Yes |
+| `tags` | Always includes `task` | Yes |
+| `status` | `active`, `waiting`, `someday`, `done` | Yes |
+| `priority` | `high`, `medium`, `low` | Yes (default: `medium`) |
+| `due` | `YYYY-MM-DD` or empty | No |
+| `context` | `work`, `personal`, or `[work, personal]` | Only in dual-context vaults |
+| `assigned-to` | Wikilink to person | No |
+| `project` | Wikilink to project | No |
+| `waiting-on` | Wikilink to person (when status is `waiting`) | No |
+| `waiting-since` | `YYYY-MM-DD` | No |
+| `created` | `YYYY-MM-DD` | Yes |
+| `completed` | `YYYY-MM-DD` (set when done) | No |
+| `aliases` | Short names for the task | No |
 
-In vaults with both work and personal contexts, prefix each task with a context tag for visual scanning:
+### Filename Convention
 
-- `- [ ] [work] **Task title** — context`
-- `- [ ] [personal] **Task title** — context`
-
-The prefix makes it easy to scan for context-relevant tasks at a glance. When the active session context is known, new tasks are automatically prefixed.
-
-### Example Tasks
-
-**Single-context vault:**
-
-```markdown
-## Active
-- [ ] **Review budget proposal** — for [[Sarah Chen|Sarah]], due Friday
-  - See [[Q2 Budget Draft]] for latest version
-- [ ] **Draft Q2 roadmap** — after syncing with [[Greg Wilson|Greg]]
-  - Blocked until [[Project Phoenix]] status is clear
-
-## Waiting On
-- [ ] **Phoenix cost estimate** — waiting on [[Todd Martinez|Todd]] since Jan 15
-
-## Done
-- [x] ~~**Submit expense report**~~ (2025-01-18)
-```
-
-**Dual-context vault:**
-
-```markdown
-## Active
-- [ ] [work] **Review budget proposal** — for [[Sarah Chen|Sarah]], due Friday
-  - See [[Q2 Budget Draft]] for latest version
-- [ ] [personal] **Book dentist appointment** — [[Dr. Sarah Patel|Dr. Patel]], before end of month
-- [ ] [work] **Draft Q2 roadmap** — after syncing with [[Greg Wilson|Greg]]
-- [ ] [personal] **Research kitchen countertops** — for [[Kitchen Renovation|kitchen reno]]
-
-## Waiting On
-- [ ] [work] **Phoenix cost estimate** — waiting on [[Todd Martinez|Todd]] since Jan 15
-- [ ] [personal] **Contractor quote** — waiting on [[Jamie Lee|Jamie]] since Mar 1
-
-## Done
-- [x] [work] ~~**Submit expense report**~~ (2025-01-18)
-- [x] [personal] ~~**Order new running shoes**~~ (2025-01-20)
-```
+Lowercase, hyphenated, descriptive: `review-budget-proposal.md`, `book-dentist-appointment.md`. Keep it short but recognizable.
 
 ## How to Interact
 
 **When user asks "what's on my plate" / "my tasks":**
-- Read TASKS.md
-- Summarize Active and Waiting On sections
-- Highlight anything overdue or urgent
-- Resolve wikilinks to provide context (e.g., "the task for Sarah about the budget proposal")
+- Read all notes in `tasks/` (not `tasks/done/`)
+- Filter by active session context if in a dual-context vault
+- Summarize by status: active first, then waiting, then someday
+- Highlight anything overdue (due date < today) or high priority
+- Resolve wikilinks to provide context (e.g., "the budget review for Sarah, due Friday")
 
 **When user says "add a task" / "remind me to":**
-- Add to Active section with `- [ ] **Task**` format
-- In dual-context vaults, prefix with `[work]` or `[personal]` based on the active session context
-- Include context if provided (who it's for, due date)
+- Create a new note in `tasks/` using the task note format
+- Set `status: active` and `created: [today]`
+- In dual-context vaults, set `context` based on the active session context
 - Use `[[wikilinks]]` for any people, projects, or notes mentioned
-- If a person is mentioned, link to their memory note: `[[Todd Martinez|Todd]]`
+- If a person is mentioned, link to their memory note in `assigned-to`
+- Set `priority` based on urgency cues (default: `medium`)
+- Set `due` if a deadline is mentioned
+- Even simple tasks ("buy milk") get their own note — keep the body minimal if there's nothing to add
 
 **When user says "done with X" / "finished X":**
-- Find the task
-- Change `[ ]` to `[x]`
-- Add strikethrough: `~~task~~`
-- Add completion date
-- Move to Done section
+- Find the task note in `tasks/`
+- Update frontmatter: `status: done`, add `completed: [today]`
+- Move the file from `tasks/` to `tasks/done/`
+- Confirm to the user what was completed
+
+**When user says "waiting on X for Y":**
+- Find or create the task note
+- Update frontmatter: `status: waiting`, add `waiting-on: "[[Person]]"`, add `waiting-since: [today]`
+- Note in the body what you're waiting for
 
 **When user asks "what am I waiting on":**
-- Read the Waiting On section
-- Note how long each item has been waiting
-- Resolve wikilinks to show who/what you're waiting on
+- Read all notes in `tasks/` where `status: waiting`
+- Show who you're waiting on and how long (days since `waiting-since`)
 
-## Conventions
+**When user says "put X on the back burner" / "someday":**
+- Update frontmatter: `status: someday`
+- Task stays in `tasks/` but won't show in active views
 
-- **Bold** the task title for scannability
-- Include "for [[Person]]" when it's a commitment to someone
-- Include "due [date]" for deadlines
-- Include "since [date]" for waiting items
-- Use `[[wikilinks]]` for all people, projects, and related notes
-- Sub-bullets for additional context, with links to relevant vault notes
-- Keep Done section for ~1 week, then clear old items
+## Quick Capture
+
+Even for tiny tasks, create a note. The note can be minimal:
+
+```markdown
+---
+title: Buy milk
+tags:
+  - task
+context: personal
+status: active
+priority: low
+created: 2026-03-10
+---
+
+# Buy milk
+```
+
+The overhead of a file is negligible. The benefit is that every task is searchable, filterable, and visible in Bases views — no task gets lost in a long list.
 
 ## Extracting Tasks
 
-When summarizing meetings or conversations, offer to add extracted tasks:
+When summarizing meetings or conversations, offer to create task notes for:
 - Commitments the user made ("I'll send that over")
 - Action items assigned to them
 - Follow-ups mentioned
 
-Ask before adding — don't auto-add without confirmation. When adding, link to the source note if one exists (e.g., `from [[Meeting Notes 2025-01-20]]`).
+Ask before creating — don't auto-create without confirmation. When creating, link to the source note if one exists (e.g., add `[[Meeting Notes 2026-03-10]]` to the Related section).
+
+## Conventions
+
+- One task per file, always in `tasks/`
+- Completed tasks move to `tasks/done/` (not deleted)
+- `tags: [task]` is mandatory — this is what Bases filters on
+- Use `[[wikilinks]]` for all people, projects, and related notes
+- Keep filenames short and descriptive
+- Subtasks live as checkboxes inside the task note body — they don't get their own files
+- The `## Log` section captures progress updates over time
+- When a task is referenced from a daily note, use `[[Task Name]]` to create a backlink
 
 ## Obsidian Bases Integration
 
-A task tracker Base can provide database-like views of tasks. See the vault-workflow skill for the pre-built `tasks.base` file that creates filtered views of TASKS.md and all notes tagged with `#task`.
+Task notes are viewed through Bases files in `bases/`. The primary view is `tasks.base`, which shows all active tasks sorted by priority and due date. Context-filtered views (`work-tasks.base`, `personal-tasks.base`) show tasks scoped to a single context. See the vault-workflow skill for the full Bases definitions.
