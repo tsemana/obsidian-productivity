@@ -1,22 +1,21 @@
 ---
-description: Initialize the Obsidian vault productivity system and open the dashboard
+description: Initialize the Obsidian vault productivity system
 ---
 
 # Start Command
 
 > If you see unfamiliar placeholders or need to check which tools are connected, see [CONNECTORS.md](../CONNECTORS.md).
 
-Initialize the task and memory systems inside an Obsidian vault, then open the unified dashboard.
+Initialize the task and memory systems inside an Obsidian vault.
 
 ## Instructions
 
 ### 1. Check What Exists
 
 Check the working directory for:
-- `TASKS.md` — task list
 - `CLAUDE.md` — working memory
 - `memory/` — deep memory directory
-- `dashboard.html` — the visual UI
+- `tasks/` — task notes folder
 - `daily/` — daily notes folder
 - `templates/` — note templates
 - `bases/` — Obsidian Bases views
@@ -24,22 +23,14 @@ Check the working directory for:
 ### 2. Create What's Missing
 
 **If vault structure doesn't exist:** Create all folders and files per the vault-workflow skill:
-- Folders: `daily/`, `projects/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
-- Templates: `templates/daily.md`, `templates/person.md`, `templates/project.md`, `templates/meeting.md`, `templates/reference.md`
+- Folders: `tasks/`, `tasks/done/`, `daily/`, `projects/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
+- Templates: `templates/daily.md`, `templates/person.md`, `templates/project.md`, `templates/task.md`, `templates/meeting.md`, `templates/reference.md`
 - Bases: `bases/tasks.base`, `bases/projects.base`, `bases/people.base`
 - Core files: `memory/glossary.md`, `memory/context/company.md`
 
-**If `TASKS.md` doesn't exist:** Create it with the standard template (see task-management skill). Include frontmatter with `tags: [dashboard]` and `aliases: [Task List, Todo]`.
+**If `CLAUDE.md` and `memory/` don't exist:** This is a fresh setup — begin the memory bootstrap workflow (see below).
 
-**If `dashboard.html` doesn't exist:** Copy it from `${CLAUDE_PLUGIN_ROOT}/dashboard.html` to the current working directory.
-
-**If `CLAUDE.md` and `memory/` don't exist:** This is a fresh setup — after opening the dashboard, begin the memory bootstrap workflow (see below).
-
-### 3. Open the Dashboard
-
-Do NOT use `open` or `xdg-open` — in Cowork, the agent runs in a VM and shell open commands won't reach the user's browser. Instead, tell the user: "Dashboard is ready at `dashboard.html`. Open it from your file browser to get started."
-
-### 4. Orient the User
+### 3. Orient the User
 
 If everything was already initialized:
 ```
@@ -48,6 +39,7 @@ Vault is set up. Your tasks, memory, and Obsidian views are all loaded.
 - /update --comprehensive for a deep scan of all activity
 
 Your vault structure:
+- tasks/ for task notes (view with bases/tasks.base in Obsidian)
 - daily/ for daily notes
 - projects/ for working project notes
 - references/ for research and meeting notes
@@ -56,9 +48,9 @@ Your vault structure:
 - templates/ for consistent note creation
 ```
 
-If memory hasn't been bootstrapped yet, continue to step 5 (context detection) and then step 6 (memory bootstrap).
+If memory hasn't been bootstrapped yet, continue to step 4 (context detection) and then step 5 (memory bootstrap).
 
-### 5. Detect Context Mode (First Run Only)
+### 4. Detect Context Mode (First Run Only)
 
 Before bootstrapping memory, determine if this will be a single-context or dual-context vault.
 
@@ -83,7 +75,7 @@ accounts (e.g., one for work, one for personal)?
 - Skip all context tagging
 - Proceed normally
 
-### 6. Bootstrap Memory (First Run Only)
+### 5. Bootstrap Memory (First Run Only)
 
 Only do this if `CLAUDE.md` and `memory/` don't exist yet.
 
@@ -92,7 +84,7 @@ The best source of workplace language is the user's actual task list. Real tasks
 **Ask the user:**
 ```
 Where do you keep your todos or task list? This could be:
-- A local file (e.g., TASKS.md, todo.txt)
+- A local file (e.g., todo.txt, a notes app)
 - An app (e.g. Asana, Linear, Jira, Notion, Todoist)
 - A notes file
 
@@ -121,7 +113,9 @@ I see some terms I want to make sure I understand:
 
 Continue through each task, asking only about terms you haven't already decoded.
 
-### 7. Optional Comprehensive Scan
+**After decoding, migrate tasks:** Create individual task notes in `tasks/` for each active task from the user's existing list, using the task-management skill format with proper frontmatter and wikilinks.
+
+### 6. Optional Comprehensive Scan
 
 After task list decoding, offer:
 ```
@@ -144,7 +138,7 @@ Build a braindump of people, projects, and terms found. Present findings grouped
 - **Needs clarification** — ask the user
 - **Low frequency / unclear** — note for later
 
-### 8. Write Memory Files
+### 7. Write Memory Files
 
 From everything gathered, create all memory files using Obsidian conventions:
 
@@ -162,24 +156,26 @@ From everything gathered, create all memory files using Obsidian conventions:
 - `bases/work-tasks.base`, `bases/personal-tasks.base`
 - `bases/work-people.base`, `bases/personal-people.base`
 
-### 9. Report Results
+### 8. Report Results
 
 ```
 Productivity system ready:
-- Tasks: TASKS.md (X items)
+- Tasks: X task notes in tasks/
 - Memory: X people, X terms, X projects
 - Vault: folders, templates, and Bases views created
-- Dashboard: open from your file browser
 
 Use /update to keep things current (add --comprehensive for a deep scan).
 
-Open your vault in Obsidian to explore the graph view — you'll see
-how people, projects, and tasks are all connected.
+Open your vault in Obsidian to explore:
+- bases/tasks.base for your task board
+- bases/projects.base for project overview
+- bases/people.base for your contacts
+- Graph view to see how everything connects
 ```
 
 ## Notes
 
-- If memory is already initialized, this just opens the dashboard
+- If memory is already initialized, this just orients the user
 - Nicknames are critical — always capture as frontmatter `aliases`
 - All people/project notes must use wikilinks for cross-referencing
 - If a source isn't available, skip it and note the gap

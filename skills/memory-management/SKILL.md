@@ -42,7 +42,7 @@ This vault may be used from multiple Claude accounts (e.g., one for work, one fo
 Once the active context is determined for the session:
 
 - **Every new file** gets `context: work` or `context: personal` in frontmatter (in addition to other tags)
-- **TASKS.md** — new tasks get a `[work]` or `[personal]` prefix in the task title for visual scanning
+- **Task notes** — new task notes in `tasks/` get `context: work` or `context: personal` in frontmatter
 - **CLAUDE.md reads** — when summarizing, prioritize entries matching the active context
 - **Memory lookups** — search all memory regardless of context (a work colleague might appear in a personal task), but note the context when presenting results
 - **Bases views** — context-filtered views exist alongside the "all" views

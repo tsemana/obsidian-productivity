@@ -16,8 +16,8 @@ How the Obsidian vault is organized and how all the pieces connect: tasks, memor
 ```
 vault-root/
 ├── CLAUDE.md              ← Working memory (hot cache)
-├── TASKS.md               ← Task list
-├── dashboard.html         ← Visual task/memory dashboard
+├── tasks/                 ← Active task notes (one per task)
+│   └── done/              ← Completed task notes (archived)
 ├── daily/                 ← Daily notes (YYYY-MM-DD.md)
 ├── projects/              ← Project notes (one per project)
 ├── references/            ← Research, articles, meeting notes
@@ -36,6 +36,7 @@ vault-root/
 
 ### Folder Purposes
 
+- **tasks/** — One note per task. Each task has frontmatter with status, priority, due date, context. Completed tasks move to `tasks/done/`.
 - **daily/** — Daily notes auto-created by date. Capture quick thoughts, meeting notes, and task updates throughout the day. Link to people and projects freely.
 - **projects/** — One note per active project. These are the "working" notes you edit — distinct from memory/projects/ which are the reference profiles.
 - **references/** — Long-lived reference material: articles, specs, research, meeting notes.
@@ -77,7 +78,7 @@ tags:
 When writing daily notes, link generously:
 - Mention a person → `[[Todd Martinez|Todd]]`
 - Reference a project → `[[Project Phoenix|Phoenix]]`
-- Capture a task → add to both the daily note AND TASKS.md
+- Capture a task → create a task note in `tasks/` and link it: `[[Review budget proposal]]`
 - Meeting notes → create in references/ and link from daily note
 
 ## Templates
@@ -171,6 +172,43 @@ project:
 
 ```
 
+### Task Template (`templates/task.md`)
+
+Every task gets its own note. See the task-management skill for the full format and interaction patterns.
+
+```markdown
+---
+title:
+aliases: []
+tags:
+  - task
+context:
+status: active
+priority: medium
+due:
+assigned-to:
+project:
+created: {{date:YYYY-MM-DD}}
+---
+
+# {{title}}
+
+## Description
+
+
+## Subtasks
+- [ ]
+
+## Blockers
+
+
+## Related
+-
+
+## Log
+
+```
+
 ### Reference Template (`templates/reference.md`)
 
 ```markdown
@@ -201,9 +239,8 @@ source:
 
 ```yaml
 filters:
-  or:
+  and:
     - file.hasTag("task")
-    - 'file.name == "TASKS"'
 
 formulas:
   days_until_due: 'if(due, (date(due) - today()).days, "")'
@@ -321,9 +358,7 @@ When the vault uses dual contexts, create additional Bases views that filter by 
 ```yaml
 filters:
   and:
-    - or:
-      - file.hasTag("task")
-      - 'file.name == "TASKS"'
+    - file.hasTag("task")
     - 'context == "work"'
 
 views:
@@ -343,9 +378,7 @@ views:
 ```yaml
 filters:
   and:
-    - or:
-      - file.hasTag("task")
-      - 'file.name == "TASKS"'
+    - file.hasTag("task")
     - 'context == "personal"'
 
 views:
@@ -399,10 +432,10 @@ The main views (tasks.base, projects.base, people.base) remain unfiltered so you
 
 When setting up a new vault (via `/start` command), create:
 
-1. Core folders: `daily/`, `projects/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
+1. Core folders: `tasks/`, `tasks/done/`, `daily/`, `projects/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
 2. Template files in `templates/`
 3. Base files in `bases/`
-4. CLAUDE.md, TASKS.md at vault root
+4. CLAUDE.md at vault root
 5. memory/glossary.md
 6. memory/context/company.md (skeleton)
 
@@ -415,7 +448,7 @@ The power of this system comes from linking. Follow these principles:
 1. **Link people by wikilink** — `[[Todd Martinez|Todd]]` not just "Todd"
 2. **Link projects by wikilink** — `[[Project Phoenix|Phoenix]]` not just "Phoenix"
 3. **Link from daily notes** — every daily note should link to the people and projects touched that day
-4. **Link tasks to context** — tasks in TASKS.md link to people, projects, and source notes
+4. **Link tasks to context** — task notes use wikilinks for assigned-to, project, and related notes
 5. **Use aliases** — frontmatter `aliases` lets you link naturally (`[[Todd]]` resolves to `[[Todd Martinez]]`)
 6. **Tags for filtering** — `#person`, `#project`, `#daily`, `#meeting`, `#reference`, `#task` enable Bases views
 7. **Backlinks are free** — Obsidian automatically shows what links to any note, building a web of context

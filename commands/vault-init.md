@@ -236,7 +236,7 @@ Vault configured! Here's what was set up:
 
 Next steps:
 1. Open this folder in Obsidian: File → Open Vault → Open folder as vault
-2. Run /start to initialize tasks, memory, and the dashboard
+2. Run /start to initialize tasks, memory, and Bases views
 ```
 
 **Scenario B:**
@@ -251,7 +251,7 @@ Vault updated for productivity workflow:
 
 Next steps:
 1. Restart Obsidian to pick up the config changes
-2. Run /start to initialize tasks, memory, and the dashboard
+2. Run /start to initialize tasks, memory, and Bases views
 ```
 
 ## Notes

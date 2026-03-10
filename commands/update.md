@@ -7,7 +7,7 @@ argument-hint: "[--comprehensive]"
 
 > If you see unfamiliar placeholders or need to check which tools are connected, see [CONNECTORS.md](../CONNECTORS.md).
 
-Keep your task list and memory current. Two modes:
+Keep your tasks and memory current. Two modes:
 
 - **Default:** Sync tasks from external tools, triage stale items, check memory for gaps
 - **`--comprehensive`:** Deep scan chat, email, calendar, docs — flag missed todos and suggest new memories
@@ -23,7 +23,7 @@ Keep your task list and memory current. Two modes:
 
 ### 1. Load Current State
 
-Read `TASKS.md` and `memory/` directory. If they don't exist, suggest `/start` first.
+Read task notes in `tasks/` and `memory/` directory. If they don't exist, suggest `/start` first.
 
 ### 2. Sync Tasks from External Sources
 
@@ -33,29 +33,29 @@ Check for available task sources:
 
 If no sources are available, skip to Step 3.
 
-**Fetch tasks assigned to the user** (open/in-progress). Compare against TASKS.md:
+**Fetch tasks assigned to the user** (open/in-progress). Compare against task notes in `tasks/`:
 
-| External task | TASKS.md match? | Action |
+| External task | Task note match? | Action |
 |---------------|-----------------|--------|
-| Found, not in TASKS.md | No match | Offer to add |
-| Found, already in TASKS.md | Match by title (fuzzy) | Skip |
-| In TASKS.md, not in external | No match | Flag as potentially stale |
-| Completed externally | In Active section | Offer to mark done |
+| Found, no matching note | No match | Offer to create task note |
+| Found, matching note exists | Match by title (fuzzy) | Skip |
+| Task note exists, not in external | No match | Flag as potentially stale |
+| Completed externally | Still in `tasks/` (not done/) | Offer to mark done and move to `tasks/done/` |
 
 Present diff and let user decide what to add/complete.
 
 ### 3. Triage Stale Items
 
-Review Active tasks in TASKS.md and flag:
+Review task notes in `tasks/` and flag:
 - Tasks with due dates in the past
-- Tasks in Active for 30+ days
-- Tasks with no context (no person, no project)
+- Tasks with `status: active` for 30+ days (check `created` date)
+- Tasks with no assigned-to or project
 
-Present each for triage: Mark done? Reschedule? Move to Someday?
+Present each for triage: Mark done? Reschedule? Move to someday?
 
 ### 4. Decode Tasks for Memory Gaps
 
-For each task, attempt to decode all entities (people, projects, acronyms, tools, links):
+For each task note, attempt to decode all entities (people, projects, acronyms, tools, links):
 
 ```
 Task: "Send PSR to Todd re: Phoenix blockers"
@@ -85,7 +85,7 @@ Add answers to the appropriate memory files:
 - New people → create `memory/people/{name}.md` with frontmatter `aliases` and `tags: [person]`
 - New projects → create `memory/projects/{name}.md` with frontmatter `aliases` and `tags: [project]`
 - New terms → add to `memory/glossary.md`
-- Update wikilinks in TASKS.md to use proper `[[links]]`
+- Update wikilinks in task notes to use proper `[[links]]`
 
 ### 6. Capture Enrichment
 
@@ -99,7 +99,7 @@ Tasks often contain richer context than memory. Extract and update:
 
 ```
 Update complete:
-- Tasks: +3 from project tracker, 1 completed, 2 triaged
+- Tasks: +3 from project tracker, 1 completed (moved to done/), 2 triaged
 - Memory: 2 gaps filled, 1 project enriched
 - All tasks decoded ✓
 - Vault links updated ✓
@@ -119,7 +119,7 @@ Gather data from available MCP sources:
 
 ### Extra Step: Flag Missed Todos
 
-Compare activity against TASKS.md. Surface action items that aren't tracked:
+Compare activity against task notes. Surface action items that aren't tracked:
 
 ```
 ## Possible Missing Tasks
@@ -128,7 +128,7 @@ From your activity, these look like todos you haven't captured:
 
 1. From chat (Jan 18):
    "I'll send the updated mockups by Friday"
-   → Add to TASKS.md?
+   → Create task note?
 
 2. From meeting "Phoenix Standup" (Jan 17):
    You have a recurring meeting but no Phoenix tasks active
@@ -136,10 +136,10 @@ From your activity, these look like todos you haven't captured:
 
 3. From email (Jan 16):
    "I'll review the API spec this week"
-   → Add to TASKS.md?
+   → Create task note?
 ```
 
-Let user pick which to add. When adding, use wikilinks for any people/projects mentioned.
+Let user pick which to add. When creating task notes, use wikilinks for any people/projects mentioned and set context based on the active session.
 
 ### Extra Step: Suggest New Memories
 
@@ -166,7 +166,7 @@ Present grouped by confidence. High-confidence items offered to add directly as 
 ### Extra Step: Create Daily Note
 
 If today's daily note doesn't exist, offer to create it in `daily/` using the daily template, pre-populated with:
-- Today's tasks from TASKS.md
+- Today's active tasks (from task notes with `status: active`)
 - Upcoming meetings from calendar
 - Key items from the scan
 
