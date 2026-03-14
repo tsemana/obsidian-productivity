@@ -19,12 +19,11 @@ vault-root/
 ├── tasks/                 ← Active task notes (one per task)
 │   └── done/              ← Completed task notes (archived)
 ├── daily/                 ← Daily notes (YYYY-MM-DD.md)
-├── projects/              ← Project notes (one per project)
 ├── references/            ← Research, articles, meeting notes
 ├── memory/
 │   ├── glossary.md        ← Full decoder ring
 │   ├── people/            ← Person profiles
-│   ├── projects/          ← Project detail notes
+│   ├── projects/          ← Project notes (working + reference)
 │   └── context/           ← Company, teams, tools
 ├── templates/             ← Note templates
 ├── bases/                 ← Obsidian Bases views
@@ -38,9 +37,9 @@ vault-root/
 
 - **tasks/** — One note per task. Each task has frontmatter with status, priority, due date, context. Completed tasks move to `tasks/done/`.
 - **daily/** — Daily notes auto-created by date. Capture quick thoughts, meeting notes, and task updates throughout the day. Link to people and projects freely.
-- **projects/** — One note per active project. These are the "working" notes you edit — distinct from memory/projects/ which are the reference profiles.
 - **references/** — Long-lived reference material: articles, specs, research, meeting notes.
-- **memory/** — The productivity plugin's knowledge base. People profiles, project metadata, glossary, company context.
+- **memory/** — The productivity plugin's knowledge base. People profiles, project notes (both working content and structured metadata), glossary, company context. All project notes live here — `memory/projects/` is the single home for everything project-related.
+- **memory/projects/** — One note per project. Contains both the structured frontmatter Claude reads/writes (status, aliases, context, key people) and the working content you edit (overview, timeline, notes). No separate top-level projects/ folder.
 - **templates/** — Obsidian templates for consistent note creation.
 - **bases/** — Obsidian Bases files for database-like views.
 - **canvas/** — Visual canvases for brainstorming and project mapping.

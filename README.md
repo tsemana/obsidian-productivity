@@ -36,6 +36,7 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | `obsidian-bases` | Obsidian Bases files for database-like views |
 | `json-canvas` | JSON Canvas files for visual canvases |
 | `obsidian-cli` | Obsidian CLI for vault interaction |
+| `consolidate-on` | Standardise wikilinks for a person to canonical `[[filename\|Display Name]]` format |
 | `defuddle` | Clean markdown extraction from web pages |
 
 ## Getting Started

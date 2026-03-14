@@ -23,7 +23,7 @@ Check the working directory for:
 ### 2. Create What's Missing
 
 **If vault structure doesn't exist:** Create all folders and files per the vault-workflow skill:
-- Folders: `tasks/`, `tasks/done/`, `daily/`, `projects/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
+- Folders: `tasks/`, `tasks/done/`, `daily/`, `references/`, `memory/`, `memory/people/`, `memory/projects/`, `memory/context/`, `templates/`, `bases/`, `canvas/`
 - Templates: `templates/daily.md`, `templates/person.md`, `templates/project.md`, `templates/task.md`, `templates/meeting.md`, `templates/reference.md`
 - Bases: `bases/tasks.base`, `bases/projects.base`, `bases/people.base`
 - Core files: `memory/glossary.md`, `memory/context/company.md`
@@ -41,9 +41,10 @@ Vault is set up. Your tasks, memory, and Obsidian views are all loaded.
 Your vault structure:
 - tasks/ for task notes (view with bases/tasks.base in Obsidian)
 - daily/ for daily notes
-- projects/ for working project notes
 - references/ for research and meeting notes
-- memory/ for people, projects, and glossary
+- memory/projects/ for all project notes
+- memory/people/ for people profiles
+- memory/ for glossary and company context
 - bases/ for database views (tasks, projects, people)
 - templates/ for consistent note creation
 ```

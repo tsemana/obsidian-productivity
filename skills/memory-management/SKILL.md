@@ -113,13 +113,13 @@ tags:
 context: work
 role: Finance Lead
 team: Finance
-reports-to: "[[Michael Chen]]"
+reports-to: "[[michael-chen|Michael Chen]]"
 ---
 
 # Todd Martinez
 
 **Role:** Finance Lead | **Team:** Finance
-**Reports to:** [[Michael Chen]] (CFO)
+**Reports to:** [[michael-chen|Michael Chen]] (CFO)
 
 ## Communication
 - Prefers Slack DM
@@ -129,13 +129,13 @@ reports-to: "[[Michael Chen]]"
 ## Context
 - Handles all [[PSR]]s and financial reporting
 - Key contact for deal approvals over $500k
-- Works closely with [[Greg Wilson|Greg]] on forecasting
+- Works closely with [[greg-wilson|Greg]] on forecasting
 
 ## Notes
 - Cubs fan, likes talking baseball
 ```
 
-Because `aliases` includes "Todd", typing `[[Todd]]` in any vault note will link to this file.
+The `aliases` field lets Obsidian users type `[[Todd]]` in the editor and resolve it via the alias index. However, Claude should always write the canonical `[[todd-martinez|Todd]]` format directly — never relying on alias resolution.
 
 ### Project Notes (`memory/projects/{name}.md`)
 
@@ -159,12 +159,12 @@ budget: $1.2M
 Database migration from legacy Oracle to PostgreSQL.
 
 ## Key People
-- [[Sarah Chen|Sarah]] — tech lead
-- [[Todd Martinez|Todd]] — budget owner
-- [[Greg Wilson|Greg]] — stakeholder (sales impact)
+- [[sarah-chen|Sarah]] — tech lead
+- [[todd-martinez|Todd]] — budget owner
+- [[greg-wilson|Greg]] — stakeholder (sales impact)
 
 ## Context
-$1.2M budget, 6-month timeline. Critical path for [[Project Horizon|Horizon]].
+$1.2M budget, 6-month timeline. Critical path for [[project-horizon|Horizon]].
 
 ## Timeline
 - [ ] Schema migration — due Feb 15
@@ -196,21 +196,21 @@ Workplace shorthand, acronyms, and internal language.
 | Term | Meaning |
 |------|---------|
 | standup | Daily 9am sync in #engineering |
-| the migration | [[Project Phoenix]] database work |
+| the migration | [[project-phoenix|Project Phoenix]] database work |
 | ship it | Deploy to production |
 
 ## Nicknames → Full Names
 | Nickname | Person |
 |----------|--------|
-| Todd | [[Todd Martinez]] |
-| T | [[Todd Martinez]] |
-| Sarah | [[Sarah Chen]] |
+| Todd | [[todd-martinez|Todd Martinez]] |
+| T | [[todd-martinez|Todd Martinez]] |
+| Sarah | [[sarah-chen|Sarah Chen]] |
 
 ## Project Codenames
 | Codename | Project |
 |----------|---------|
-| Phoenix | [[Project Phoenix]] |
-| Horizon | [[Project Horizon]] |
+| Phoenix | [[project-phoenix|Project Phoenix]] |
+| Horizon | [[project-horizon|Project Horizon]] |
 ```
 
 ### Company Context (`memory/context/company.md`)
@@ -235,9 +235,9 @@ tags:
 ## Teams
 | Team | What they do | Key people |
 |------|-------------|------------|
-| Platform | Infrastructure | [[Sarah Chen|Sarah]] (lead) |
-| Finance | Money stuff | [[Todd Martinez|Todd]] (lead) |
-| Sales | Revenue | [[Greg Wilson|Greg]] |
+| Platform | Infrastructure | [[sarah-chen|Sarah]] (lead) |
+| Finance | Money stuff | [[todd-martinez|Todd]] (lead) |
+| Sales | Revenue | [[greg-wilson|Greg]] |
 
 ## Processes
 | Process | What it means |
@@ -261,10 +261,10 @@ This stays compact (~50-80 lines per context) for fast loading. Uses wikilinks t
 ## People
 | Who | Role |
 |-----|------|
-| **[[Todd Martinez\|Todd]]** | Finance lead |
-| **[[Sarah Chen\|Sarah]]** | Engineering (Platform) |
-| **[[Greg Wilson\|Greg]]** | Sales |
-→ Full list: [[Glossary]], profiles: memory/people/
+| **[[todd-martinez\|Todd]]** | Finance lead |
+| **[[sarah-chen\|Sarah]]** | Engineering (Platform) |
+| **[[greg-wilson\|Greg]]** | Sales |
+→ Full list: [[glossary|Glossary]], profiles: memory/people/
 
 ## Terms
 | Term | Meaning |
@@ -272,13 +272,13 @@ This stays compact (~50-80 lines per context) for fast loading. Uses wikilinks t
 | PSR | Pipeline Status Report |
 | P0 | Drop everything priority |
 | standup | Daily 9am sync |
-→ Full glossary: [[Glossary]]
+→ Full glossary: [[glossary|Glossary]]
 
 ## Projects
 | Name | What |
 |------|------|
-| **[[Project Phoenix\|Phoenix]]** | DB migration, Q2 launch |
-| **[[Project Horizon\|Horizon]]** | Mobile app redesign |
+| **[[project-phoenix\|Phoenix]]** | DB migration, Q2 launch |
+| **[[project-horizon\|Horizon]]** | Mobile app redesign |
 → Details: memory/projects/
 
 ## Preferences
@@ -305,35 +305,35 @@ Tony Semana. Work: [Role] at [Company]. Personal: [one line].
 ## Work — People
 | Who | Role |
 |-----|------|
-| **[[Todd Martinez\|Todd]]** | Finance lead |
-| **[[Sarah Chen\|Sarah]]** | Engineering (Platform) |
-→ Full list: [[Glossary]], profiles: memory/people/
+| **[[todd-martinez\|Todd]]** | Finance lead |
+| **[[sarah-chen\|Sarah]]** | Engineering (Platform) |
+→ Full list: [[glossary|Glossary]], profiles: memory/people/
 
 ## Work — Terms
 | Term | Meaning |
 |------|---------|
 | PSR | Pipeline Status Report |
 | P0 | Drop everything priority |
-→ Full glossary: [[Glossary]]
+→ Full glossary: [[glossary|Glossary]]
 
 ## Work — Projects
 | Name | What |
 |------|------|
-| **[[Project Phoenix\|Phoenix]]** | DB migration, Q2 launch |
+| **[[project-phoenix\|Phoenix]]** | DB migration, Q2 launch |
 → Details: memory/projects/
 
 ## Personal — People
 | Who | Role |
 |-----|------|
-| **[[Jamie Lee\|Jamie]]** | Contractor (home reno) |
-| **[[Dr. Sarah Patel\|Dr. Patel]]** | Dentist |
+| **[[jamie-lee\|Jamie]]** | Contractor (home reno) |
+| **[[dr-sarah-patel\|Dr. Patel]]** | Dentist |
 → Profiles: memory/people/
 
 ## Personal — Projects
 | Name | What |
 |------|------|
-| **[[Kitchen Renovation\|Kitchen reno]]** | Started Jan, budget $45k |
-| **[[Europe Trip 2026]]** | Planning for August |
+| **[[kitchen-renovation\|Kitchen reno]]** | Started Jan, budget $45k |
+| **[[europe-trip-2026\|Europe Trip 2026]]** | Planning for August |
 → Details: memory/projects/
 
 ## Preferences
@@ -387,15 +387,15 @@ When user says "remember this" or "X means Y":
 2. **People:**
    - Create/update memory/people/{name}.md with frontmatter including `aliases`
    - Add `tags: [person]` and role/team properties
-   - Use `[[wikilinks]]` for relationships (reports-to, works-with)
-   - Add to CLAUDE.md Key People if important
-   - **Capture nicknames as aliases** — critical for wikilink resolution
+   - Use `[[kebab-slug|Display Name]]` for all relationships (reports-to, works-with, etc.)
+   - Add to CLAUDE.md Key People if important using `[[kebab-slug\|Nickname]]` format
+   - **Capture nicknames as aliases** — so Obsidian users can type them in the editor
 
 3. **Projects:**
    - Create/update memory/projects/{name}.md with frontmatter including `aliases`
    - Add `tags: [project]` and status/timeline properties
-   - Link key people with `[[wikilinks]]`
-   - Add to CLAUDE.md Active Projects if current
+   - Link key people with `[[kebab-slug|Display Name]]` format
+   - Add to CLAUDE.md Active Projects if current using `[[kebab-slug\|Codename]]` format
    - **Capture codenames as aliases** — "Phoenix", "the migration", etc.
 
 4. **Preferences:** Add to CLAUDE.md Preferences section
@@ -422,8 +422,7 @@ When user asks "who is X" or "what does X mean":
 - Keep CLAUDE.md under ~100 lines per context (the "hot 30" rule)
 - Filenames: lowercase, hyphens (`todd-martinez.md`, `project-phoenix.md`)
 - Always capture nicknames and alternate names **as frontmatter aliases**
-- Use `[[wikilinks]]` for all internal references (people, projects, notes)
-- Use `[[Display Name|alias]]` syntax when the display differs from the filename
+- **Always use `[[filename-slug|Display Name]]` for all wikilinks** — the kebab-case slug is always the link target; the display name is what renders. Example: `[[todd-martinez|Todd]]`, `[[project-phoenix|Phoenix]]`. Never use `[[Full Name|alias]]` or bare `[[Alias]]` — these rely on Obsidian's alias index and break when the index is cold.
 - Add `tags` in frontmatter for all memory notes (person, project, reference, context)
 - **Dual-context vaults:** add `context: work` or `context: personal` to frontmatter of every new file
 - **Dual-context vaults:** if a person or project belongs to both contexts, use `context: [work, personal]`
