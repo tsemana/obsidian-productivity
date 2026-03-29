@@ -92,7 +92,7 @@ Claude Code discovers plugins through marketplaces. This repo serves as its own 
 
 4. **Build the MCP server** (if not pre-built):
    ```bash
-   cd mcp-server
+   cd plugin/mcp-server
    npm install
    npm run build
    ```
@@ -101,7 +101,7 @@ Claude Code discovers plugins through marketplaces. This repo serves as its own 
 
 Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 23 MCP tools are available for vault operations.
 
-**Updating the plugin:** Run `/plugin` and check for updates, or re-add the marketplace to pull the latest version. Rebuild the MCP server if tools changed (`cd mcp-server && npm run build`).
+**Updating the plugin:** Run `/plugin` and check for updates, or re-add the marketplace to pull the latest version. Rebuild the MCP server if tools changed (`cd plugin/mcp-server && npm run build`).
 
 ### After Setup
 
@@ -116,7 +116,7 @@ Both tools work on the same files, so changes in one immediately show up in the 
 
 ## MCP Server
 
-The plugin includes an MCP server (`mcp-server/`) that provides 23 structured tools for vault operations — tasks, memory, notes, wikilinks, bases, canvas, and Obsidian config. This replaces the need for direct filesystem access via folder mapping.
+The plugin includes an MCP server (`plugin/mcp-server/`) that provides 23 structured tools for vault operations — tasks, memory, notes, wikilinks, bases, canvas, and Obsidian config. This replaces the need for direct filesystem access via folder mapping.
 
 ### Setup by Client
 
@@ -124,7 +124,7 @@ The plugin includes an MCP server (`mcp-server/`) that provides 23 structured to
 
 Install the plugin via `/plugin` (see Option C above). This registers all skills, commands, and MCP tools automatically. Set `OBSIDIAN_VAULT_PATH` env var for vault path resolution.
 
-For MCP-server-only use (without installing the full plugin), the `.mcp.json` at the plugin root auto-registers the vault server when your working directory is the plugin root.
+For MCP-server-only use (without installing the full plugin), the `.mcp.json` in `plugin/` auto-registers the vault server when your working directory is the plugin directory.
 
 **Claude Desktop:**
 
@@ -135,7 +135,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "obsidian-vault": {
       "command": "node",
-      "args": ["/path/to/plugin/mcp-server/dist/index.js"],
+      "args": ["/path/to/repo/plugin/mcp-server/dist/index.js"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/vault"
       }
@@ -151,7 +151,7 @@ Install the plugin and select your vault folder. The MCP server resolves the vau
 ### Building from Source
 
 ```bash
-cd mcp-server
+cd plugin/mcp-server
 npm install
 npm run build
 ```
@@ -172,7 +172,7 @@ npm run build
 
 Connect your communication and project management tools for the best experience. Without them, manage tasks and memory manually.
 
-See [CONNECTORS.md](CONNECTORS.md) for details on supported tools and alternatives.
+See [CONNECTORS.md](plugin/CONNECTORS.md) for details on supported tools and alternatives.
 
 ## Credits
 

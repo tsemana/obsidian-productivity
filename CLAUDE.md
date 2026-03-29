@@ -9,7 +9,7 @@ An Obsidian-native productivity plugin for Claude Desktop, Cowork, and Claude Co
 ## Build Commands
 
 ```bash
-cd mcp-server
+cd plugin/mcp-server
 npm install        # install dependencies
 npm run build      # compile TypeScript (tsc → dist/)
 npm run dev        # run from source with tsx
@@ -20,7 +20,7 @@ There are no tests or linting configured in this project.
 
 ## Architecture
 
-### MCP Server (`mcp-server/`)
+### MCP Server (`plugin/mcp-server/`)
 
 A TypeScript MCP server using `@modelcontextprotocol/sdk` with stdio transport. Single entry point at `src/index.ts` that registers all 23 tools grouped by domain:
 
@@ -29,27 +29,27 @@ A TypeScript MCP server using `@modelcontextprotocol/sdk` with stdio transport. 
 
 Vault path resolution priority: CLI arg → `OBSIDIAN_VAULT_PATH` env var → CWD.
 
-### Skills (`skills/`)
+### Skills (`plugin/skills/`)
 
 Each skill is a folder with a `SKILL.md` and optional `references/` subdirectory. Skills are markdown-based prompt definitions — not code. They teach Claude how to work with specific Obsidian features (markdown syntax, bases, canvas, CLI, task management, memory, etc.).
 
-### Commands (`commands/`)
+### Commands (`plugin/commands/`)
 
 Markdown files defining the `/vault-init`, `/start`, and `/update` command prompts. These orchestrate vault setup and maintenance workflows.
 
-### Connectors (`.mcp.json`, `CONNECTORS.md`)
+### Connectors (`plugin/.mcp.json`, `plugin/CONNECTORS.md`)
 
 The `.mcp.json` pre-configures MCP servers for external tools (Slack, Notion, Asana, Linear, Gmail, Google Calendar, etc.). Plugin files use `~~category` placeholders (e.g., `~~chat`, `~~project tracker`) to stay tool-agnostic.
 
 ### Plugin Distribution
 
-The plugin uses the `.claude-plugin/plugin.json` manifest format, shared by both Cowork and Claude Code. The repo also contains a `.claude-plugin/marketplace.json` so it can serve as its own Claude Code marketplace.
+The repo has a two-level structure: the root serves as a Claude Code marketplace (`.claude-plugin/marketplace.json`), and `plugin/` contains the actual plugin content (`plugin/.claude-plugin/plugin.json`, skills, commands, MCP server, connectors).
 
-- **Cowork**: Install via the plugin UI, or use `.plugin` bundle files (zip archives containing manifest, skills, commands, `.mcp.json`, and MCP server)
-- **Claude Code (terminal & VS Code extension)**: Add the repo as a marketplace (`/plugin marketplace add semantechs/obsidian-productivity`), then install via `/plugin install obsidian-productivity`. This registers all skills, commands, and MCP tools. Requires `OBSIDIAN_VAULT_PATH` env var for vault path resolution.
+- **Cowork**: Install via the plugin UI using `.plugin` bundle files (zip archives built from `plugin/` directory)
+- **Claude Code (terminal & VS Code extension)**: Add the repo as a marketplace (`/plugin marketplace add tsemana/obsidian-productivity`), then install via `/plugin install obsidian-productivity`. This registers all skills, commands, and MCP tools. Requires `OBSIDIAN_VAULT_PATH` env var for vault path resolution.
 - **Claude Desktop**: MCP server only (no skill/command auto-discovery) — configure in `claude_desktop_config.json`
 
-`obsidian-productivity-v*.plugin` files are versioned distribution bundles for Cowork.
+`obsidian-productivity-v*.plugin` files are versioned distribution bundles for Cowork, built from the `plugin/` directory.
 
 ## Key Patterns
 

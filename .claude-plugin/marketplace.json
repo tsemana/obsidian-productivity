@@ -6,12 +6,12 @@
   "metadata": {
     "description": "Plugin distribution for obsidian-productivity",
     "version": "1.0.0",
-    "pluginRoot": ".."
+    "pluginRoot": "./plugin"
   },
   "plugins": [
     {
       "name": "obsidian-productivity",
-      "source": "..",
+      "source": "./plugin",
       "description": "Obsidian-native productivity system: task management, workplace memory, and Obsidian-flavored markdown skills. Includes an MCP server for vault operations.",
       "version": "0.7.0",
       "author": {
