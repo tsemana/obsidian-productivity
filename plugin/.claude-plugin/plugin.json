@@ -5,10 +5,5 @@
   "author": {
     "name": "Tony Semana"
   },
-  "keywords": ["obsidian", "productivity", "tasks", "memory", "vault", "markdown", "bases", "canvas", "mcp"],
-  "mcp_server": {
-    "command": "node",
-    "args": ["mcp-server/dist/index.js"],
-    "env_required": ["OBSIDIAN_VAULT_PATH"]
-  }
+  "keywords": ["obsidian", "productivity", "tasks", "memory", "vault", "markdown", "bases", "canvas", "mcp"]
 }
