@@ -1,6 +1,6 @@
 # Obsidian Productivity Plugin
 
-An Obsidian-native productivity system for Cowork. Combines task management, workplace memory, and Obsidian-flavored markdown skills — everything lives in your vault as linked, searchable notes.
+An Obsidian-native productivity system for Claude Desktop, Cowork, and Claude Code. Combines task management, workplace memory, and Obsidian-flavored markdown skills — everything lives in your vault as linked, searchable notes. Includes an MCP server for vault operations across all Claude clients.
 
 ## What It Does
 
@@ -38,6 +38,7 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | `obsidian-cli` | Obsidian CLI for vault interaction |
 | `consolidate-on` | Standardise wikilinks for a person to canonical `[[filename\|Display Name]]` format |
 | `defuddle` | Clean markdown extraction from web pages |
+| `transcript-capture` | Turn a meeting transcript, call, or document into vault notes: reference in `memory/`, tasks in `tasks/`, and waiting-for notes for others' deliverables |
 
 ## Getting Started
 
@@ -58,12 +59,49 @@ If you don't have Obsidian yet:
 
 If you already use Obsidian:
 
-1. **Install this plugin** in Cowork
+1. **Install this plugin** in Cowork (or Claude Code — see below)
 2. **Start a Cowork session** and select your existing vault folder
 3. **Run `/vault-init`** — this will detect your existing settings and only add what's needed. It will ask before changing anything and never touch your existing notes, themes, or community plugins. It enables Daily Notes, Templates, Backlinks, and Graph core plugins if they aren't already on, and points Daily Notes to `daily/` and Templates to `templates/`.
 4. **Run `/start`** — this creates the productivity folders and files alongside your existing vault content. Your current notes stay exactly where they are.
 5. **Restart Obsidian** to pick up any config changes
 6. **Check the graph view** — you'll see the new memory and task notes appear alongside your existing notes, connected by wikilinks
+
+### Option C: Claude Code (Terminal or VS Code Extension)
+
+Claude Code discovers plugins through marketplaces. This repo serves as its own marketplace.
+
+1. **Add the marketplace** (one-time setup):
+   ```
+   /plugin marketplace add semantechs/obsidian-productivity
+   ```
+   Or from a local clone:
+   ```
+   /plugin marketplace add /path/to/obsidian-productivity
+   ```
+
+2. **Install the plugin:**
+   ```
+   /plugin install obsidian-productivity
+   ```
+   Or use the interactive plugin manager — run `/plugin`, go to **Discover**, and install from there.
+
+3. **Set your vault path** (required for the MCP server to find your vault):
+   ```bash
+   export OBSIDIAN_VAULT_PATH="$HOME/Documents/MyVault"
+   ```
+
+4. **Build the MCP server** (if not pre-built):
+   ```bash
+   cd mcp-server
+   npm install
+   npm run build
+   ```
+
+5. **Run `/vault-init`** and **`/start`** as with Cowork
+
+Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 23 MCP tools are available for vault operations.
+
+**Updating the plugin:** Run `/plugin` and check for updates, or re-add the marketplace to pull the latest version. Rebuild the MCP server if tools changed (`cd mcp-server && npm run build`).
 
 ### After Setup
 
@@ -75,6 +113,60 @@ Once the vault is initialized, your workflow looks like this:
 - **Run `/update --comprehensive`** for a deep scan of your communications to catch missed todos and discover new people/projects
 
 Both tools work on the same files, so changes in one immediately show up in the other.
+
+## MCP Server
+
+The plugin includes an MCP server (`mcp-server/`) that provides 23 structured tools for vault operations — tasks, memory, notes, wikilinks, bases, canvas, and Obsidian config. This replaces the need for direct filesystem access via folder mapping.
+
+### Setup by Client
+
+**Claude Code (CLI or VS Code extension):**
+
+Install the plugin via `/plugin` (see Option C above). This registers all skills, commands, and MCP tools automatically. Set `OBSIDIAN_VAULT_PATH` env var for vault path resolution.
+
+For MCP-server-only use (without installing the full plugin), the `.mcp.json` at the plugin root auto-registers the vault server when your working directory is the plugin root.
+
+**Claude Desktop:**
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-vault": {
+      "command": "node",
+      "args": ["/path/to/plugin/mcp-server/dist/index.js"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/vault"
+      }
+    }
+  }
+}
+```
+
+**Cowork:**
+
+Install the plugin and select your vault folder. The MCP server resolves the vault path from the working directory automatically.
+
+### Building from Source
+
+```bash
+cd mcp-server
+npm install
+npm run build
+```
+
+### Available Tools
+
+| Group | Tools |
+|-------|-------|
+| Vault Management | `vault_init`, `vault_health`, `vault_list` |
+| Tasks | `task_create`, `task_update`, `task_complete`, `task_list` |
+| Memory | `memory_read`, `memory_write`, `claudemd_read`, `claudemd_update` |
+| Notes | `note_read`, `note_write`, `note_search`, `note_move` |
+| Wikilinks | `wikilink_consolidate`, `wikilink_validate` |
+| Bases & Canvas | `base_read`, `base_write`, `canvas_read`, `canvas_write` |
+| Obsidian Config | `obsidian_config_read`, `obsidian_config_write` |
 
 ## Data Sources
 

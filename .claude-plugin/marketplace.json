@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-productivity-marketplace",
+  "owner": {
+    "name": "Tony Semana"
+  },
+  "metadata": {
+    "description": "Plugin distribution for obsidian-productivity",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "obsidian-productivity",
+      "source": ".",
+      "description": "Obsidian-native productivity system: task management, workplace memory, and Obsidian-flavored markdown skills. Includes an MCP server for vault operations.",
+      "version": "0.7.0",
+      "author": {
+        "name": "Tony Semana"
+      },
+      "keywords": ["obsidian", "productivity", "tasks", "memory", "vault", "markdown", "bases", "canvas", "mcp"],
+      "category": "productivity",
+      "tags": ["obsidian", "task-management", "memory", "vault", "mcp"]
+    }
+  ]
+}
