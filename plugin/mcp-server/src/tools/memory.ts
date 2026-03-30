@@ -4,6 +4,8 @@ import { parseNote, serializeNote, mergeFrontmatter, replaceSection } from "../f
 import { noteRead, noteWrite } from "./notes.js";
 import { vaultList } from "./vault-management.js";
 import { isInsideVault } from "../vault.js";
+import type { Database as DatabaseType } from "better-sqlite3";
+import { reindexFile } from "../sync.js";
 
 interface MemoryMatch {
   path: string;
@@ -19,6 +21,7 @@ export function memoryRead(
     search?: string;
     type?: "person" | "project" | "glossary" | "context" | "any";
   },
+  db?: DatabaseType,
 ): { path: string; frontmatter: Record<string, unknown> | null; body: string } | { matches: MemoryMatch[] } | { error: string; message: string } {
   // Direct path access
   if (options.path) {
@@ -32,8 +35,96 @@ export function memoryRead(
     return { error: "invalid_params", message: "Either path or search must be provided" };
   }
 
-  const searchTerm = options.search.toLowerCase();
   const type = options.type ?? "any";
+
+  if (db) {
+    return memorySearchIndexed(db, vaultPath, options.search, type);
+  }
+
+  return memorySearchFileScan(vaultPath, options.search, type);
+}
+
+/** Search memory using FTS5 index, falling back to LIKE queries, then glossary */
+function memorySearchIndexed(
+  db: DatabaseType,
+  vaultPath: string,
+  search: string,
+  type: "person" | "project" | "glossary" | "context" | "any",
+): { path: string; frontmatter: Record<string, unknown> | null; body: string } | { matches: MemoryMatch[] } | { error: string; message: string } {
+  const searchTerm = search.toLowerCase();
+  const matches: MemoryMatch[] = [];
+
+  // Build a path prefix filter based on type
+  const pathPrefixes: string[] = [];
+  if (type === "person" || type === "any") pathPrefixes.push("memory/people/");
+  if (type === "project" || type === "any") pathPrefixes.push("memory/projects/");
+  if (type === "context" || type === "any") pathPrefixes.push("memory/context/");
+
+  if (pathPrefixes.length > 0) {
+    // Try FTS5 first
+    try {
+      const ftsQuery = `"${searchTerm.replace(/"/g, '""')}"`;
+      const rows = db.prepare(`
+        SELECT n.path, n.title, n.frontmatter_json
+        FROM notes_fts f
+        JOIN notes n ON n.rowid = f.rowid
+        WHERE notes_fts MATCH ?
+      `).all(ftsQuery) as Array<{ path: string; title: string | null; frontmatter_json: string | null }>;
+
+      for (const row of rows) {
+        if (!pathPrefixes.some((p) => row.path.startsWith(p))) continue;
+        const fm = row.frontmatter_json ? (JSON.parse(row.frontmatter_json) as Record<string, unknown>) : {};
+        matches.push({
+          path: row.path,
+          frontmatter: fm,
+          match_reason: `fts: ${row.title ?? row.path}`,
+        });
+      }
+    } catch {
+      // FTS failed — fall back to LIKE queries on title/path
+      const likeRows = db.prepare(`
+        SELECT path, title, frontmatter_json
+        FROM notes
+        WHERE (title LIKE ? OR path LIKE ?)
+      `).all(`%${searchTerm}%`, `%${searchTerm}%`) as Array<{ path: string; title: string | null; frontmatter_json: string | null }>;
+
+      for (const row of likeRows) {
+        if (!pathPrefixes.some((p) => row.path.startsWith(p))) continue;
+        const fm = row.frontmatter_json ? (JSON.parse(row.frontmatter_json) as Record<string, unknown>) : {};
+        matches.push({
+          path: row.path,
+          frontmatter: fm,
+          match_reason: `title/path match: ${row.title ?? row.path}`,
+        });
+      }
+    }
+  }
+
+  // Always check glossary when type allows it
+  if (type === "glossary" || type === "any") {
+    const glossaryResult = searchGlossary(vaultPath, searchTerm);
+    if (glossaryResult) {
+      matches.push(glossaryResult);
+    }
+  }
+
+  // If exactly one match, return the full content
+  if (matches.length === 1) {
+    const result = noteRead(vaultPath, matches[0].path);
+    if ("error" in result) return result;
+    return { path: result.path, frontmatter: result.frontmatter, body: result.body };
+  }
+
+  return { matches };
+}
+
+/** Original file-scan search logic (used when no db is available) */
+function memorySearchFileScan(
+  vaultPath: string,
+  search: string,
+  type: "person" | "project" | "glossary" | "context" | "any",
+): { path: string; frontmatter: Record<string, unknown> | null; body: string } | { matches: MemoryMatch[] } | { error: string; message: string } {
+  const searchTerm = search.toLowerCase();
   const matches: MemoryMatch[] = [];
 
   // Determine which directories to search
@@ -159,6 +250,7 @@ export function memoryWrite(
     replace_section?: { heading: string; content: string };
     create_only?: boolean;
   },
+  db?: DatabaseType,
 ): { path: string; created: boolean; frontmatter: Record<string, unknown> } | { error: string; message: string } {
   if (!isInsideVault(vaultPath, path)) {
     return { error: "path_traversal", message: "Path escapes vault boundary" };
@@ -207,6 +299,9 @@ export function memoryWrite(
   });
 
   if ("error" in writeResult) return { error: writeResult.error, message: (writeResult as { message: string }).message };
+  if (db) {
+    reindexFile(db, vaultPath, path);
+  }
   return { path, created: !exists, frontmatter: fm };
 }
 
