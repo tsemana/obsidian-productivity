@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import type { Database as DatabaseType } from "better-sqlite3";
-import { getAccessToken, syncAccount } from "../google-api.js";
+import { syncAccount } from "../google-api.js";
 
 /** account_register — register a Google account for syncing */
 export function accountRegister(
@@ -18,14 +19,21 @@ export function accountRegister(
     return { error: "account_exists", message: `Account "${id}" already registered. Use a different id.` };
   }
 
-  // Verify gcloud authentication
-  try {
-    getAccessToken(email);
-  } catch (e) {
-    return {
-      error: "auth_failed",
-      message: `Cannot authenticate ${email}. Run: gcloud auth login ${email}\n${e}`,
-    };
+  // Verify gcloud authentication (only when OAuth credentials are not configured)
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    try {
+      const token = execFileSync(
+        "gcloud",
+        ["auth", "print-access-token", `--account=${email}`],
+        { encoding: "utf-8", timeout: 15000 },
+      ).trim();
+      if (!token) throw new Error("Empty token returned");
+    } catch (e) {
+      return {
+        error: "auth_failed",
+        message: `Cannot authenticate ${email}. Run: gcloud auth login ${email}\n${e}`,
+      };
+    }
   }
 
   db.prepare(
