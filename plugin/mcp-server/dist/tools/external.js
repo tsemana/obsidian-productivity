@@ -1,0 +1,60 @@
+import { getAccessToken, syncAccount } from "../google-api.js";
+/** account_register — register a Google account for syncing */
+export function accountRegister(db, options) {
+    const { id, email, context } = options;
+    // Check if account already exists
+    const existing = db.prepare("SELECT id FROM external_accounts WHERE id = ?").get(id);
+    if (existing) {
+        return { error: "account_exists", message: `Account "${id}" already registered. Use a different id.` };
+    }
+    // Verify gcloud authentication
+    try {
+        getAccessToken(email);
+    }
+    catch (e) {
+        return {
+            error: "auth_failed",
+            message: `Cannot authenticate ${email}. Run: gcloud auth login ${email}\n${e}`,
+        };
+    }
+    db.prepare("INSERT INTO external_accounts (id, provider, account_email, context) VALUES (?, 'google', ?, ?)").run(id, email, context ?? null);
+    return { id, email, context: context ?? null, message: `Account "${id}" (${email}) registered.` };
+}
+/** account_sync — sync calendar and email data for one or all accounts */
+export async function accountSync(db, options = {}) {
+    let accounts;
+    if (options.id) {
+        const account = db.prepare("SELECT id, account_email FROM external_accounts WHERE id = ?").get(options.id);
+        if (!account) {
+            return { accounts: [{ id: options.id, email: "", calendar_events_synced: 0, emails_synced: 0, error: `Account "${options.id}" not found` }] };
+        }
+        accounts = [account];
+    }
+    else {
+        accounts = db.prepare("SELECT id, account_email FROM external_accounts").all();
+    }
+    const results = [];
+    for (const account of accounts) {
+        try {
+            const result = await syncAccount(db, account.id, account.account_email, {
+                timeZone: options.timeZone,
+            });
+            results.push({
+                id: account.id,
+                email: account.account_email,
+                ...result,
+            });
+        }
+        catch (e) {
+            results.push({
+                id: account.id,
+                email: account.account_email,
+                calendar_events_synced: 0,
+                emails_synced: 0,
+                error: String(e),
+            });
+        }
+    }
+    return { accounts: results };
+}
+//# sourceMappingURL=external.js.map

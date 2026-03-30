@@ -1,5 +1,4 @@
 plugin/mcp-server/node_modules/
-plugin/mcp-server/dist/
 .worktrees/
 
 .vault-index.db
