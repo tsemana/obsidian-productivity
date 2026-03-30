@@ -89,8 +89,119 @@ export function noteSearch(
     extension?: string;
     limit?: number;
   },
+  db?: import("better-sqlite3").Database,
 ): { results: Array<{ path: string; frontmatter?: Record<string, unknown>; matches?: Array<{ line: number; text: string }> }>; count: number } {
   const { query, frontmatter_filter, directory, extension = ".md", limit = 50 } = options;
+
+  // SQLite-backed search when db is available and searching .md files
+  if (db && extension === ".md") {
+    return noteSearchIndexed(db, vaultPath, query, frontmatter_filter, directory, limit);
+  }
+
+  // Fallback: original file-scan implementation
+  return noteSearchFileScan(vaultPath, query, frontmatter_filter, directory, extension, limit);
+}
+
+function noteSearchIndexed(
+  db: import("better-sqlite3").Database,
+  vaultPath: string,
+  query: string | undefined,
+  frontmatter_filter: Record<string, unknown> | undefined,
+  directory: string | undefined,
+  limit: number,
+): { results: Array<{ path: string; frontmatter?: Record<string, unknown>; matches?: Array<{ line: number; text: string }> }>; count: number } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (directory && directory !== ".") {
+    conditions.push("n.path LIKE ?");
+    params.push(`${directory}/%`);
+  }
+
+  if (frontmatter_filter) {
+    const indexedCols = ["status", "priority", "context", "project", "assigned_to", "area", "due"];
+    for (const [key, value] of Object.entries(frontmatter_filter)) {
+      const colName = key === "assigned-to" ? "assigned_to" : key;
+      if (indexedCols.includes(colName) && typeof value === "string") {
+        conditions.push(`n.${colName} = ?`);
+        params.push(value);
+      } else if (key === "tags" && typeof value === "string") {
+        conditions.push("n.tags LIKE ?");
+        params.push(`%${JSON.stringify(value).slice(1, -1)}%`);
+      } else if (typeof value === "string") {
+        conditions.push("n.frontmatter_json LIKE ?");
+        params.push(`%${value}%`);
+      }
+    }
+  }
+
+  let results: Array<{ path: string; frontmatter?: Record<string, unknown>; matches?: Array<{ line: number; text: string }> }>;
+
+  if (query) {
+    const ftsQuery = query.split(/\s+/).map((term) => `"${term.replace(/"/g, '""')}"`).join(" ");
+    const where = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
+    const sql = `
+      SELECT n.path, n.frontmatter_json, bm25(notes_fts) as rank
+      FROM notes_fts fts
+      JOIN notes n ON n.rowid = fts.rowid
+      WHERE notes_fts MATCH ? ${where}
+      ORDER BY rank
+      LIMIT ?
+    `;
+    const rows = db.prepare(sql).all(ftsQuery, ...params, limit) as Array<{
+      path: string;
+      frontmatter_json: string | null;
+      rank: number;
+    }>;
+
+    results = rows.map((row) => {
+      const entry: { path: string; frontmatter?: Record<string, unknown>; matches?: Array<{ line: number; text: string }> } = { path: row.path };
+      if (row.frontmatter_json) {
+        try { entry.frontmatter = JSON.parse(row.frontmatter_json); } catch {}
+      }
+      try {
+        const content = readFileSync(join(vaultPath, row.path), "utf-8");
+        const queryLower = query.toLowerCase();
+        const lines = content.split("\n");
+        const matches: Array<{ line: number; text: string }> = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase().includes(queryLower)) {
+            matches.push({ line: i + 1, text: lines[i].trim() });
+            if (matches.length >= 5) break;
+          }
+        }
+        if (matches.length > 0) entry.matches = matches;
+      } catch {}
+      return entry;
+    });
+  } else {
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const sql = `SELECT path, frontmatter_json FROM notes ${where} LIMIT ?`;
+    const rows = db.prepare(sql).all(...params, limit) as Array<{
+      path: string;
+      frontmatter_json: string | null;
+    }>;
+
+    results = rows.map((row) => {
+      const entry: { path: string; frontmatter?: Record<string, unknown> } = { path: row.path };
+      if (row.frontmatter_json) {
+        try { entry.frontmatter = JSON.parse(row.frontmatter_json); } catch {}
+      }
+      return entry;
+    });
+  }
+
+  return { results, count: results.length };
+}
+
+function noteSearchFileScan(
+  vaultPath: string,
+  query: string | undefined,
+  frontmatter_filter: Record<string, unknown> | undefined,
+  directory: string | undefined,
+  extension: string,
+  limit: number,
+): { results: Array<{ path: string; frontmatter?: Record<string, unknown>; matches?: Array<{ line: number; text: string }> }>; count: number } {
   const searchDir = directory ?? ".";
 
   const listing = vaultList(vaultPath, searchDir, {
@@ -104,14 +215,12 @@ export function noteSearch(
   for (const file of listing.files) {
     if (results.length >= limit) break;
 
-    // Frontmatter filter
     if (frontmatter_filter) {
       if (!file.frontmatter || !matchesFrontmatter(file.frontmatter, frontmatter_filter)) {
         continue;
       }
     }
 
-    // Text search
     if (query) {
       try {
         const content = readFileSync(join(vaultPath, file.path), "utf-8");
@@ -129,7 +238,7 @@ export function noteSearch(
 
         const result: { path: string; frontmatter?: Record<string, unknown>; matches: Array<{ line: number; text: string }> } = {
           path: file.path,
-          matches: matches.slice(0, 5), // Limit context lines per file
+          matches: matches.slice(0, 5),
         };
         if (file.frontmatter) result.frontmatter = file.frontmatter;
         results.push(result);
@@ -137,7 +246,6 @@ export function noteSearch(
         continue;
       }
     } else {
-      // Frontmatter-only match
       const result: { path: string; frontmatter?: Record<string, unknown> } = { path: file.path };
       if (file.frontmatter) result.frontmatter = file.frontmatter;
       results.push(result);
