@@ -162,7 +162,7 @@ export function radarUpdateItem(
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
-interface TaskRow {
+export interface TaskRow {
   path: string;
   title: string | null;
   priority: string | null;
@@ -171,7 +171,7 @@ interface TaskRow {
   frontmatter_json: string | null;
 }
 
-interface EventRow {
+export interface EventRow {
   id: string;
   account_id: string;
   calendar_id: string;
@@ -188,7 +188,7 @@ interface EventRow {
   context: string | null;
 }
 
-interface EmailRow {
+export interface EmailRow {
   id: string;
   account_id: string;
   thread_id: string;
