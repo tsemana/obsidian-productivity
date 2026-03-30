@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
 const DB_FILENAME = ".vault-index.db";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 let db = null;
 /** Open or create the SQLite database for the given vault */
 export function openDatabase(vaultPath) {
@@ -38,8 +38,11 @@ function runMigrations(db) {
     const currentVersion = db.pragma("user_version", { simple: true });
     if (currentVersion < 1) {
         migrateV1(db);
-        db.pragma(`user_version = ${SCHEMA_VERSION}`);
     }
+    if (currentVersion < 2) {
+        migrateV2(db);
+    }
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 function migrateV1(db) {
     db.exec(`
@@ -138,6 +141,11 @@ function migrateV1(db) {
     CREATE INDEX IF NOT EXISTS idx_email_date ON email_cache(date);
     CREATE INDEX IF NOT EXISTS idx_email_account ON email_cache(account_id);
     CREATE INDEX IF NOT EXISTS idx_reflog_path ON reference_log(path, referenced_at);
+  `);
+}
+function migrateV2(db) {
+    db.exec(`
+    ALTER TABLE external_accounts ADD COLUMN refresh_token TEXT;
   `);
 }
 //# sourceMappingURL=index-db.js.map
