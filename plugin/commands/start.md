@@ -165,6 +165,8 @@ Productivity system ready:
 - Memory: X people, X terms, X projects
 - Vault: folders, templates, and Bases views created
 
+- Automation: Daily radar cron [active/not available]
+
 Use /update to keep things current (add --comprehensive for a deep scan).
 
 Open your vault in Obsidian to explore:
@@ -173,6 +175,27 @@ Open your vault in Obsidian to explore:
 - bases/people.base for your contacts
 - Graph view to see how everything connects
 ```
+
+### 9. Set Up Daily Radar Automation (Claude Code Only)
+
+Check if the `CronCreate` tool is available (Claude Code only — Cowork and Desktop don't support cron).
+
+**If CronCreate is available:**
+
+1. Check if a cron named `daily-radar` already exists via `CronList`
+2. If it doesn't exist, create it:
+   ```
+   CronCreate({
+     name: "daily-radar",
+     schedule: "0 7 * * 1-5",
+     prompt: "Call radar_generate to create today's radar and daily note. Open the radar HTML file in the browser."
+   })
+   ```
+3. Confirm: "Daily radar scheduled for 7:00 AM weekdays. Adjust with /schedule, or delete with CronDelete."
+
+**If CronCreate is not available:**
+
+Skip silently. Add a note to the report: "Tip: Use Claude Code for automated daily radar generation."
 
 ## Notes
 

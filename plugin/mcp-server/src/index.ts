@@ -17,6 +17,7 @@ import { runSync, reindexFile } from "./sync.js";
 import { startSidecar, stopSidecar } from "./http-sidecar.js";
 import { accountRegister, accountSync } from "./tools/external.js";
 import { radarGenerate, radarUpdateItem } from "./tools/radar.js";
+import { radarData, weeklyReview, projectOverview, quickCapture, searchAndSummarize } from "./tools/composite.js";
 
 const server = new McpServer({
   name: "obsidian-vault",
@@ -458,6 +459,76 @@ server.tool(
   async ({ path, state, date }) => ({
     content: [{ type: "text", text: JSON.stringify(radarUpdateItem(requireVault(), { path, state, date }), null, 2) }],
   }),
+);
+
+// ─── Group 10: Composite Workflow Tools ──────────────────────────────────
+
+server.tool(
+  "radar_data",
+  "Gather all data for daily radar briefing in a single call. Returns tasks (overdue/active/waiting with next actions), per-project next actions, inbox count, stuck projects, calendar events, email highlights, and CLAUDE.md context.",
+  {
+    lookahead_days: z.number().optional().describe("Number of days to look ahead for calendar (default: 3)"),
+    include_email: z.boolean().optional().describe("Include email highlights (default: true)"),
+    include_calendar: z.boolean().optional().describe("Include calendar events (default: true)"),
+  },
+  async (params) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await radarData(db, requireVault(), params);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "weekly_review",
+  "Gather all data for the GTD Weekly Review in a single call. Returns inbox items, active tasks, waiting-fors with days waiting, project summaries, someday/maybe, calendar (2 weeks forward + 1 week back), and memory reference frequency.",
+  {},
+  async () => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await weeklyReview(db, requireVault());
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "project_overview",
+  "Get a holistic view of a single project: project note, linked tasks by status, connected people, recent FTS5 mentions, and wikilink graph neighbors.",
+  {
+    project: z.string().describe("Project name or path, e.g. 'phoenix' or 'memory/projects/project-phoenix.md'"),
+  },
+  async ({ project }) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await projectOverview(db, requireVault(), { project });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "quick_capture",
+  "Capture a thought — creates a structured task (hint='task') or a raw inbox note (hint='idea'/'reference'/'unknown'). Returns suggested wikilinks from FTS5.",
+  {
+    thought: z.string().describe("The thought or task to capture"),
+    hint: z.enum(["task", "idea", "reference", "unknown"]).optional().describe("Capture type hint (default: unknown)"),
+  },
+  async (params) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await quickCapture(db, requireVault(), params);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "search_and_summarize",
+  "Full-text search with BM25 ranking and context snippets. Supports boolean operators, phrase queries, and prefix matching. Logs results for reference frequency tracking.",
+  {
+    query: z.string().describe("FTS5 search query (supports AND, OR, NOT, 'phrase', prefix*)"),
+    directory: z.string().optional().describe("Scope search to a directory, e.g. 'memory/projects'"),
+    limit: z.number().optional().describe("Max results (default: 10, max: 50)"),
+  },
+  async (params) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await searchAndSummarize(db, requireVault(), params);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
 );
 
 // ─── Start Server ──────────────────────────────────────────────────────────
