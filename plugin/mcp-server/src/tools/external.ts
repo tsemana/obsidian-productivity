@@ -1,44 +1,76 @@
-import { execFileSync } from "node:child_process";
 import type { Database as DatabaseType } from "better-sqlite3";
 import { syncAccount } from "../google-api.js";
+import { authorizeAccount } from "../google-oauth.js";
 
 /** account_register — register a Google account for syncing */
-export function accountRegister(
+export async function accountRegister(
   db: DatabaseType,
   options: {
     id: string;
     email: string;
     context?: string;
   },
-): { id: string; email: string; context: string | null; message: string } | { error: string; message: string } {
+): Promise<{ id: string; email: string; context: string | null; message: string } | { error: string; message: string }> {
   const { id, email, context } = options;
 
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
   // Check if account already exists
-  const existing = db.prepare("SELECT id FROM external_accounts WHERE id = ?").get(id);
-  if (existing) {
+  const existing = db.prepare("SELECT id, refresh_token FROM external_accounts WHERE id = ?").get(id) as
+    { id: string; refresh_token: string | null } | undefined;
+
+  if (existing && !clientId) {
+    // No OAuth credentials — can't re-authorize, so reject duplicate
     return { error: "account_exists", message: `Account "${id}" already registered. Use a different id.` };
   }
 
-  // Verify gcloud authentication (only when OAuth credentials are not configured)
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  let refreshToken: string | null = null;
+
+  if (clientId && clientSecret) {
+    // OAuth2 path: open browser for consent
+    try {
+      const tokens = await authorizeAccount(email, clientId, clientSecret);
+      refreshToken = tokens.refresh_token ?? null;
+    } catch (e) {
+      return {
+        error: "oauth_failed",
+        message: `OAuth authorization failed for ${email}: ${e}`,
+      };
+    }
+  } else {
+    // Fallback: verify gcloud auth works (legacy path)
+    const { execFileSync } = await import("node:child_process");
     try {
       const token = execFileSync(
         "gcloud",
         ["auth", "print-access-token", `--account=${email}`],
         { encoding: "utf-8", timeout: 15000 },
       ).trim();
-      if (!token) throw new Error("Empty token returned");
+      if (!token) throw new Error("Empty token");
     } catch (e) {
       return {
         error: "auth_failed",
-        message: `Cannot authenticate ${email}. Run: gcloud auth login ${email}\n${e}`,
+        message: `Cannot authenticate ${email}. Either configure OAuth (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET via Varlock) or run: gcloud auth login ${email}\n${e}`,
       };
     }
+    console.error(
+      "Warning: OAuth not configured. Calendar/Gmail sync will not work without GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+    );
   }
 
+  if (existing) {
+    // Re-authorization: update refresh token in place
+    db.prepare(
+      "UPDATE external_accounts SET refresh_token = ?, account_email = ?, context = ? WHERE id = ?",
+    ).run(refreshToken, email, context ?? null, id);
+    return { id, email, context: context ?? null, message: `Account "${id}" (${email}) re-authorized.` };
+  }
+
+  // New registration
   db.prepare(
-    "INSERT INTO external_accounts (id, provider, account_email, context) VALUES (?, 'google', ?, ?)",
-  ).run(id, email, context ?? null);
+    "INSERT INTO external_accounts (id, provider, account_email, context, refresh_token) VALUES (?, 'google', ?, ?, ?)",
+  ).run(id, email, context ?? null, refreshToken);
 
   return { id, email, context: context ?? null, message: `Account "${id}" (${email}) registered.` };
 }

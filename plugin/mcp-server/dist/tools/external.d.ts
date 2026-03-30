@@ -4,7 +4,7 @@ export declare function accountRegister(db: DatabaseType, options: {
     id: string;
     email: string;
     context?: string;
-}): {
+}): Promise<{
     id: string;
     email: string;
     context: string | null;
@@ -12,7 +12,7 @@ export declare function accountRegister(db: DatabaseType, options: {
 } | {
     error: string;
     message: string;
-};
+}>;
 /** account_sync — sync calendar and email data for one or all accounts */
 export declare function accountSync(db: DatabaseType, options?: {
     id?: string;
