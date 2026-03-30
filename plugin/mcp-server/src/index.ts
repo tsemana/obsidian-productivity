@@ -42,7 +42,7 @@ if (vaultPath) {
 
   // Start HTTP sidecar
   try {
-    startSidecar(vaultPath, {
+    sidecarPort = await startSidecar(vaultPath, {
       onSync: async () => {
         if (db) {
           await accountSync(db);
@@ -52,14 +52,10 @@ if (vaultPath) {
       onRadarItemUpdate: (path, state) => {
         radarUpdateItem(vaultPath, { path, state });
       },
-    }).then((port) => {
-      sidecarPort = port;
-      console.error(`HTTP sidecar listening on port ${port}`);
-    }).catch((e) => {
-      console.error("HTTP sidecar failed to start:", e);
     });
+    console.error(`HTTP sidecar listening on port ${sidecarPort}`);
   } catch (e) {
-    console.error("HTTP sidecar setup failed:", e);
+    console.error("HTTP sidecar failed to start:", e);
   }
 }
 

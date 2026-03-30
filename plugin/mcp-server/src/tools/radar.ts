@@ -47,7 +47,6 @@ export async function radarGenerate(
     ORDER BY due ASC NULLS LAST
   `).all() as Array<TaskRow>;
 
-  const todayEnd = `${date}T23:59:59`;
   const lookaheadEnd = new Date(new Date(date).getTime() + 3 * 86400000).toISOString().slice(0, 10) + "T23:59:59";
 
   const calendarEvents = db.prepare(`
@@ -113,7 +112,6 @@ export function radarUpdateItem(
   }
 
   let html = readFileSync(radarFile, "utf-8");
-  const escapedPath = options.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const dataAttr = `data-task-path="${options.path}"`;
 
   if (!html.includes(dataAttr)) {
@@ -121,25 +119,41 @@ export function radarUpdateItem(
   }
 
   if (options.state === "resolved") {
-    // Wrap the item content in <s> and add resolved class
+    // Find elements with this data-task-path and add resolved class + opacity
+    // Match the opening tag containing the data attribute
     html = html.replace(
-      new RegExp(`(<[^>]*${escapedPath}[^>]*class="[^"]*)(")`, "g"),
-      `$1 resolved$2`,
-    );
-    // Add inline style for opacity
-    html = html.replace(
-      new RegExp(`(<[^>]*${escapedPath}[^>]*style="[^"]*)(")`, "g"),
-      `$1 opacity: 0.4;$2`,
-    );
-    // If no style attr exists, add one
-    html = html.replace(
-      new RegExp(`(<[^>]*${escapedPath}[^>]*)(?!.*style=)(/?>)`, "g"),
-      `$1 style="opacity: 0.4;"$2`,
+      new RegExp(`(<(?:div|li)[^>]*${dataAttr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>)`, "g"),
+      (match) => {
+        let tag = match;
+        // Add resolved class
+        if (tag.includes('class="')) {
+          tag = tag.replace(/class="([^"]*)"/, 'class="$1 resolved"');
+        } else {
+          tag = tag.replace(/>$/, ' class="resolved">');
+        }
+        // Add opacity style
+        if (tag.includes('style="')) {
+          tag = tag.replace(/style="([^"]*)"/, 'style="$1 opacity: 0.4;"');
+        } else {
+          tag = tag.replace(/>$/, ' style="opacity: 0.4;">');
+        }
+        return tag;
+      },
     );
   } else {
-    // Remove resolved class and opacity
-    html = html.replace(/ resolved/g, "");
-    html = html.replace(/ opacity: 0\.4;/g, "");
+    // Remove resolved class and opacity from elements with this data-task-path
+    html = html.replace(
+      new RegExp(`(<(?:div|li)[^>]*${dataAttr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>)`, "g"),
+      (match) => {
+        let tag = match;
+        tag = tag.replace(/ resolved/g, "");
+        tag = tag.replace(/ opacity: 0\.4;/g, "");
+        // Clean up empty style/class attributes
+        tag = tag.replace(/ style=""/g, "");
+        tag = tag.replace(/ class=""/g, "");
+        return tag;
+      },
+    );
   }
 
   writeFileSync(radarFile, html, "utf-8");

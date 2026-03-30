@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import type { Database as DatabaseType } from "better-sqlite3";
 
 // ─── Token Acquisition ────────────────────────────────────────────────────
@@ -6,7 +6,7 @@ import type { Database as DatabaseType } from "better-sqlite3";
 /** Get an access token for a Google account via gcloud CLI */
 export function getAccessToken(email: string): string {
   try {
-    const token = execSync(`gcloud auth print-access-token --account=${email}`, {
+    const token = execFileSync("gcloud", ["auth", "print-access-token", `--account=${email}`], {
       encoding: "utf-8",
       timeout: 15000,
     }).trim();

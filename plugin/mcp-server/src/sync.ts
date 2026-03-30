@@ -1,9 +1,50 @@
-import type { Database as DatabaseType } from "better-sqlite3";
+import type { Database as DatabaseType, Statement } from "better-sqlite3";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { parseNote } from "./frontmatter.js";
 import { extractWikilinks } from "./wikilinks.js";
+
+/** Cached prepared statements for reindexFile (lazy-initialized per db instance) */
+let cachedDb: DatabaseType | null = null;
+let stmts: {
+  upsertNote: Statement;
+  deleteFts: Statement;
+  insertFts: Statement;
+  deleteLinks: Statement;
+  insertLink: Statement;
+  deleteFtsForRemove: Statement;
+  deleteLinksForRemove: Statement;
+  deleteNote: Statement;
+} | null = null;
+
+function getStatements(db: DatabaseType) {
+  if (cachedDb === db && stmts) return stmts;
+  cachedDb = db;
+  stmts = {
+    upsertNote: db.prepare(`
+      INSERT INTO notes (path, title, tags, status, priority, due, context, project,
+        assigned_to, area, created, modified_at, content_hash, body_preview, frontmatter_json)
+      VALUES (@path, @title, @tags, @status, @priority, @due, @context, @project,
+        @assigned_to, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
+      ON CONFLICT(path) DO UPDATE SET
+        title=excluded.title, tags=excluded.tags, status=excluded.status,
+        priority=excluded.priority, due=excluded.due, context=excluded.context,
+        project=excluded.project, assigned_to=excluded.assigned_to, area=excluded.area,
+        created=excluded.created, modified_at=excluded.modified_at,
+        content_hash=excluded.content_hash, body_preview=excluded.body_preview,
+        frontmatter_json=excluded.frontmatter_json
+    `),
+    deleteFts: db.prepare("DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?)"),
+    insertFts: db.prepare("INSERT INTO notes_fts (rowid, title, body) VALUES ((SELECT rowid FROM notes WHERE path = ?), ?, ?)"),
+    deleteLinks: db.prepare("DELETE FROM wikilinks WHERE source_path = ?"),
+    insertLink: db.prepare("INSERT OR IGNORE INTO wikilinks (source_path, target_slug, display_text) VALUES (?, ?, ?)"),
+    deleteFtsForRemove: db.prepare("DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?)"),
+    deleteLinksForRemove: db.prepare("DELETE FROM wikilinks WHERE source_path = ?"),
+    deleteNote: db.prepare("DELETE FROM notes WHERE path = ?"),
+  };
+  return stmts;
+}
 
 interface FileInfo {
   path: string;
@@ -93,62 +134,29 @@ export function reindexFile(
     content = readFileSync(fullPath, "utf-8");
     mtime = statSync(fullPath).mtimeMs;
   } catch {
-    // File deleted or unreadable — remove from index
     removeFile(db, filePath);
     return;
   }
 
   const row = extractNoteRow(filePath, content, mtime);
   const links = extractWikilinks(content);
-
-  const upsertNote = db.prepare(`
-    INSERT INTO notes (path, title, tags, status, priority, due, context, project,
-      assigned_to, area, created, modified_at, content_hash, body_preview, frontmatter_json)
-    VALUES (@path, @title, @tags, @status, @priority, @due, @context, @project,
-      @assigned_to, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
-    ON CONFLICT(path) DO UPDATE SET
-      title=excluded.title, tags=excluded.tags, status=excluded.status,
-      priority=excluded.priority, due=excluded.due, context=excluded.context,
-      project=excluded.project, assigned_to=excluded.assigned_to, area=excluded.area,
-      created=excluded.created, modified_at=excluded.modified_at,
-      content_hash=excluded.content_hash, body_preview=excluded.body_preview,
-      frontmatter_json=excluded.frontmatter_json
-  `);
-
-  const deleteFts = db.prepare("DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?)");
-  const insertFts = db.prepare("INSERT INTO notes_fts (rowid, title, body) VALUES ((SELECT rowid FROM notes WHERE path = ?), ?, ?)");
-  const deleteLinks = db.prepare("DELETE FROM wikilinks WHERE source_path = ?");
-  const insertLink = db.prepare("INSERT OR IGNORE INTO wikilinks (source_path, target_slug, display_text) VALUES (?, ?, ?)");
+  const s = getStatements(db);
 
   const transaction = db.transaction(() => {
-    upsertNote.run({
-      path: row.path,
-      title: row.title,
-      tags: row.tags,
-      status: row.status,
-      priority: row.priority,
-      due: row.due,
-      context: row.context,
-      project: row.project,
-      assigned_to: row.assigned_to,
-      area: row.area,
-      created: row.created,
-      modified_at: row.modified_at,
-      content_hash: row.content_hash,
-      body_preview: row.body_preview,
-      frontmatter_json: row.frontmatter_json,
+    s.upsertNote.run({
+      path: row.path, title: row.title, tags: row.tags, status: row.status,
+      priority: row.priority, due: row.due, context: row.context, project: row.project,
+      assigned_to: row.assigned_to, area: row.area, created: row.created,
+      modified_at: row.modified_at, content_hash: row.content_hash,
+      body_preview: row.body_preview, frontmatter_json: row.frontmatter_json,
     });
-
-    // Update FTS
-    deleteFts.run(row.path);
-    insertFts.run(row.path, row.title ?? "", row.body);
-
-    // Update wikilinks
-    deleteLinks.run(row.path);
+    s.deleteFts.run(row.path);
+    s.insertFts.run(row.path, row.title ?? "", row.body);
+    s.deleteLinks.run(row.path);
     for (const link of links) {
       const targetSlug = link.target.split("#")[0].trim();
       if (targetSlug) {
-        insertLink.run(row.path, targetSlug, link.display ?? "");
+        s.insertLink.run(row.path, targetSlug, link.display ?? "");
       }
     }
   });
@@ -158,14 +166,11 @@ export function reindexFile(
 
 /** Remove a file from the index */
 function removeFile(db: DatabaseType, filePath: string): void {
-  const deleteFts = db.prepare("DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?)");
-  const deleteLinks = db.prepare("DELETE FROM wikilinks WHERE source_path = ?");
-  const deleteNote = db.prepare("DELETE FROM notes WHERE path = ?");
-
+  const s = getStatements(db);
   const transaction = db.transaction(() => {
-    deleteFts.run(filePath);
-    deleteLinks.run(filePath);
-    deleteNote.run(filePath);
+    s.deleteFtsForRemove.run(filePath);
+    s.deleteLinksForRemove.run(filePath);
+    s.deleteNote.run(filePath);
   });
 
   transaction();
