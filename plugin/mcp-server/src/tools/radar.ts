@@ -1,13 +1,123 @@
 import type { Database as DatabaseType } from "better-sqlite3";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { accountSync } from "./external.js";
+import { radarData } from "./composite.js";
+import type { RadarDataResult, TaskWithNextAction, WaitingTask } from "./composite.js";
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** radar_generate — sync accounts, query all data, render radar HTML */
+/** Render a daily note markdown file from RadarDataResult */
+function renderDailyNote(date: string, data: RadarDataResult): string {
+  const { vault, calendar, email } = data;
+  const { overdue, active, waiting } = vault.tasks;
+
+  // ## Today's Focus — overdue + high priority, with wikilinks
+  const focusItems = [
+    ...overdue.map((t) => `- [ ] [[${t.path}|${t.title ?? t.path}]] *(overdue: ${t.due})*${t.next_action ? ` — ${t.next_action}` : ""}`),
+    ...active.filter((t) => t.priority === "high").map((t) => `- [ ] [[${t.path}|${t.title ?? t.path}]]${t.due ? ` *(due: ${t.due})*` : ""}${t.next_action ? ` — ${t.next_action}` : ""}`),
+  ];
+
+  // ## Next Actions by Project — table
+  const naRows = vault.next_actions_by_project.map((p) => {
+    const proj = p.project_title ?? p.project_path;
+    const task = p.task_title ?? p.task_path ?? "—";
+    const action = p.next_action ?? "—";
+    return `| [[${p.project_path}\\|${proj}]] | ${task} | ${action} |`;
+  });
+
+  // ## Calendar — today's events
+  const todayEvents = calendar.filter((e) => e.start_time.startsWith(date));
+  const calLines = todayEvents.map((e) => {
+    const time = e.all_day
+      ? "All day"
+      : new Date(e.start_time).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return `- ${time} — ${e.title}${e.location ? ` @ ${e.location}` : ""}`;
+  });
+
+  // ## Open Loops — overdue + high priority + waiting
+  const loopItems = [
+    ...overdue.map((t) => `- [ ] [[${t.path}|${t.title ?? t.path}]] *(overdue)*`),
+    ...active.filter((t) => t.priority === "high").map((t) => `- [ ] [[${t.path}|${t.title ?? t.path}]] *(high)*`),
+    ...waiting.map((t) => `- [ ] [[${t.path}|${t.title ?? t.path}]] *(waiting ${t.days_waiting}d${t.waiting_on ? ` on ${t.waiting_on}` : ""})*`),
+  ];
+
+  // ## Email Highlights — top emails
+  const emailLines = email.slice(0, 10).map((e) => {
+    const flag = e.is_starred ? "⭐ " : e.is_important ? "❗ " : "";
+    return `- ${flag}**${e.subject ?? "(No subject)"}** — ${e.sender ?? "unknown"}`;
+  });
+
+  const lines: string[] = [
+    `---`,
+    `date: ${date}`,
+    `tags: [daily]`,
+    `---`,
+    ``,
+    `## Today's Focus`,
+    focusItems.length > 0 ? focusItems.join("\n") : "_Nothing urgent_",
+    ``,
+    `## Next Actions by Project`,
+  ];
+
+  if (naRows.length > 0) {
+    lines.push(`| Project | Task | Next Action |`);
+    lines.push(`| --- | --- | --- |`);
+    lines.push(...naRows);
+  } else {
+    lines.push(`_No active projects_`);
+  }
+
+  lines.push(
+    ``,
+    `## Calendar`,
+    calLines.length > 0 ? calLines.join("\n") : "_No events today_",
+    ``,
+    `## Open Loops`,
+    loopItems.length > 0 ? loopItems.join("\n") : "_All clear_",
+    ``,
+    `## Email Highlights`,
+    emailLines.length > 0 ? emailLines.join("\n") : "_No emails_",
+  );
+
+  return lines.join("\n");
+}
+
+/** Write or update daily note in daily/YYYY-MM-DD.md */
+function writeDailyNote(vaultPath: string, date: string, data: RadarDataResult): string {
+  const dailyDir = join(vaultPath, "daily");
+  const notePath = join(dailyDir, `${date}.md`);
+  const relativePath = `daily/${date}.md`;
+
+  // Ensure daily/ directory exists
+  if (!existsSync(dailyDir)) {
+    mkdirSync(dailyDir, { recursive: true });
+  }
+
+  const generatedContent = renderDailyNote(date, data);
+  const sectionHeading = "## Generated Briefing";
+
+  if (existsSync(notePath)) {
+    let existing = readFileSync(notePath, "utf-8");
+    const sectionIdx = existing.indexOf(sectionHeading);
+    if (sectionIdx !== -1) {
+      // Replace everything from the section heading to end of file
+      existing = existing.slice(0, sectionIdx) + sectionHeading + "\n\n" + generatedContent;
+    } else {
+      // Append section at end
+      existing = existing.trimEnd() + "\n\n" + sectionHeading + "\n\n" + generatedContent;
+    }
+    writeFileSync(notePath, existing, "utf-8");
+  } else {
+    writeFileSync(notePath, generatedContent, "utf-8");
+  }
+
+  return relativePath;
+}
+
+/** radar_generate — sync accounts, query all data, render radar HTML and daily note */
 export async function radarGenerate(
   db: DatabaseType,
   vaultPath: string,
@@ -15,7 +125,7 @@ export async function radarGenerate(
     date?: string;
     sidecarPort?: number;
   } = {},
-): Promise<{ path: string; tasks_count: number; events_count: number; emails_count: number } | { error: string; message: string }> {
+): Promise<{ path: string; daily_note_path: string; tasks_count: number; events_count: number; emails_count: number } | { error: string; message: string }> {
   const date = options.date ?? todayStr();
 
   // Step 1: Sync all accounts
@@ -25,51 +135,36 @@ export async function radarGenerate(
     // Continue even if sync fails — render with whatever cached data exists
   }
 
-  // Step 2: Query data from SQLite
-  const overdueTasks = db.prepare(`
-    SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active' AND due IS NOT NULL AND due < ?
-    AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    ORDER BY due ASC
-  `).all(date) as Array<TaskRow>;
+  // Step 2: Gather all data via radarData composite tool
+  const data = await radarData(db, vaultPath, { date });
 
-  const activeTasks = db.prepare(`
-    SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active' AND (due IS NULL OR due >= ?)
-    AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
-  `).all(date) as Array<TaskRow>;
+  // Step 3: Convert TaskWithNextAction/WaitingTask → TaskRow for renderRadarHtml
+  const overdueTasks: TaskRow[] = data.vault.tasks.overdue.map((t) => ({
+    path: t.path,
+    title: t.title,
+    priority: t.priority,
+    due: t.due,
+    body_preview: t.body_preview,
+    frontmatter_json: t.frontmatter_json,
+  }));
 
-  const waitingTasks = db.prepare(`
-    SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'waiting'
-    AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    ORDER BY due ASC NULLS LAST
-  `).all() as Array<TaskRow>;
+  const activeTasks: TaskRow[] = data.vault.tasks.active.map((t) => ({
+    path: t.path,
+    title: t.title,
+    priority: t.priority,
+    due: t.due,
+    body_preview: t.body_preview,
+    frontmatter_json: t.frontmatter_json,
+  }));
 
-  const lookaheadEnd = new Date(new Date(date).getTime() + 3 * 86400000).toISOString().slice(0, 10) + "T23:59:59";
-
-  const calendarEvents = db.prepare(`
-    SELECT ce.*, ea.account_email, ea.context
-    FROM calendar_events ce
-    JOIN external_accounts ea ON ce.account_id = ea.id
-    WHERE ce.start_time >= ? AND ce.start_time <= ?
-    ORDER BY ce.start_time
-  `).all(`${date}T00:00:00`, lookaheadEnd) as Array<EventRow>;
-
-  const emailHighlights = db.prepare(`
-    SELECT ec.*, ea.account_email, ea.context
-    FROM email_cache ec
-    JOIN external_accounts ea ON ec.account_id = ea.id
-    ORDER BY ec.date DESC LIMIT 20
-  `).all() as Array<EmailRow>;
-
-  // Step 3: Read CLAUDE.md for context
-  let claudemd = "";
-  const claudemdPath = join(vaultPath, "CLAUDE.md");
-  if (existsSync(claudemdPath)) {
-    try { claudemd = readFileSync(claudemdPath, "utf-8"); } catch {}
-  }
+  const waitingTasks: TaskRow[] = data.vault.tasks.waiting.map((t) => ({
+    path: t.path,
+    title: t.title,
+    priority: t.priority,
+    due: t.due,
+    body_preview: t.body_preview,
+    frontmatter_json: t.frontmatter_json,
+  }));
 
   // Step 4: Render HTML
   const html = renderRadarHtml({
@@ -77,21 +172,25 @@ export async function radarGenerate(
     overdueTasks,
     activeTasks,
     waitingTasks,
-    calendarEvents,
-    emailHighlights,
+    calendarEvents: data.calendar,
+    emailHighlights: data.email,
     sidecarPort: options.sidecarPort,
   });
 
-  // Step 5: Write file
+  // Step 5: Write HTML file
   const filename = `radar-${date}.html`;
   const outputPath = join(vaultPath, filename);
   writeFileSync(outputPath, html, "utf-8");
 
+  // Step 6: Write daily note
+  const daily_note_path = writeDailyNote(vaultPath, date, data);
+
   return {
     path: filename,
+    daily_note_path,
     tasks_count: overdueTasks.length + activeTasks.length + waitingTasks.length,
-    events_count: calendarEvents.length,
-    emails_count: emailHighlights.length,
+    events_count: data.calendar.length,
+    emails_count: data.email.length,
   };
 }
 
