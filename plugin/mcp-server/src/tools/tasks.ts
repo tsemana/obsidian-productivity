@@ -3,6 +3,8 @@ import { join, basename } from "node:path";
 import { parseNote, serializeNote, mergeFrontmatter, replaceSection } from "../frontmatter.js";
 import { noteWrite, noteMove, noteRead } from "./notes.js";
 import { vaultList } from "./vault-management.js";
+import { reindexFile } from "../sync.js";
+import type { Database as DatabaseType } from "better-sqlite3";
 
 function slugify(title: string): string {
   return title
@@ -32,6 +34,7 @@ export function taskCreate(
     body?: string;
     filename?: string;
   },
+  db?: DatabaseType,
 ): { path: string; frontmatter: Record<string, unknown> } | { error: string; message: string } {
   const {
     title,
@@ -73,6 +76,7 @@ export function taskCreate(
   });
 
   if ("error" in result) return result;
+  if (db) reindexFile(db, vaultPath, result.path);
   return { path: result.path, frontmatter };
 }
 
@@ -85,6 +89,7 @@ export function taskUpdate(
     append_body?: string;
     replace_section?: { heading: string; content: string };
   },
+  db?: DatabaseType,
 ): { path: string; frontmatter: Record<string, unknown> } | { error: string; path: string; message: string } {
   const readResult = noteRead(vaultPath, path);
   if ("error" in readResult) return readResult;
@@ -111,6 +116,7 @@ export function taskUpdate(
   });
 
   if ("error" in writeResult) return { error: writeResult.error, path, message: (writeResult as { message: string }).message };
+  if (db) reindexFile(db, vaultPath, path);
   return { path, frontmatter: fm };
 }
 
@@ -118,6 +124,7 @@ export function taskUpdate(
 export function taskComplete(
   vaultPath: string,
   path: string,
+  db?: DatabaseType,
 ): { old_path: string; new_path: string; completed: string } | { error: string; message: string } {
   const completed = todayStr();
 
@@ -134,11 +141,147 @@ export function taskComplete(
   const moveResult = noteMove(vaultPath, path, newPath);
   if ("error" in moveResult) return moveResult;
 
+  if (db) {
+    reindexFile(db, vaultPath, path);    // removes old (file no longer at old path)
+    reindexFile(db, vaultPath, newPath); // indexes new location
+  }
+
   return { old_path: path, new_path: newPath, completed };
 }
 
-/** task_list — list tasks with filtering */
+/** task_list — dispatcher: use SQLite index if available, fall back to file scan */
 export function taskList(
+  vaultPath: string,
+  options: {
+    status?: string | string[];
+    priority?: string | string[];
+    context?: string;
+    project?: string;
+    due_before?: string;
+    due_after?: string;
+    include_done?: boolean;
+    assigned_to?: string;
+  } = {},
+  db?: DatabaseType,
+): { tasks: Array<{ path: string; frontmatter: Record<string, unknown>; body_preview: string }>; count: number } {
+  if (db) {
+    return taskListIndexed(db, vaultPath, options);
+  }
+  return taskListFileScan(vaultPath, options);
+}
+
+/** task_list via SQLite index */
+function taskListIndexed(
+  db: DatabaseType,
+  vaultPath: string,
+  options: {
+    status?: string | string[];
+    priority?: string | string[];
+    context?: string;
+    project?: string;
+    due_before?: string;
+    due_after?: string;
+    include_done?: boolean;
+    assigned_to?: string;
+  },
+): { tasks: Array<{ path: string; frontmatter: Record<string, unknown>; body_preview: string }>; count: number } {
+  const {
+    status,
+    priority,
+    context,
+    project,
+    due_before,
+    due_after,
+    include_done = false,
+    assigned_to,
+  } = options;
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  // Must be a task (tags contains "task")
+  conditions.push("(tags LIKE '%\"task\"%' OR tags LIKE '%task%')");
+
+  // Path scope: tasks/ but exclude tasks/done/ unless include_done
+  if (include_done) {
+    conditions.push("(path LIKE 'tasks/%.md' OR path LIKE 'tasks/done/%.md')");
+  } else {
+    conditions.push("path LIKE 'tasks/%.md'");
+    conditions.push("path NOT LIKE 'tasks/done/%.md'");
+  }
+
+  // Status filter
+  if (status) {
+    const statusArr = Array.isArray(status) ? status : [status];
+    const placeholders = statusArr.map(() => "?").join(", ");
+    conditions.push(`status IN (${placeholders})`);
+    params.push(...statusArr);
+  }
+
+  // Priority filter
+  if (priority) {
+    const priorityArr = Array.isArray(priority) ? priority : [priority];
+    const placeholders = priorityArr.map(() => "?").join(", ");
+    conditions.push(`priority IN (${placeholders})`);
+    params.push(...priorityArr);
+  }
+
+  // Context filter
+  if (context) {
+    conditions.push("context = ?");
+    params.push(context);
+  }
+
+  // Project filter (substring match)
+  if (project) {
+    conditions.push("project LIKE ?");
+    params.push(`%${project}%`);
+  }
+
+  // Assigned-to filter (substring match)
+  if (assigned_to) {
+    conditions.push("assigned_to LIKE ?");
+    params.push(`%${assigned_to}%`);
+  }
+
+  // Due date filters
+  if (due_before) {
+    conditions.push("due IS NOT NULL AND due < ?");
+    params.push(due_before);
+  }
+
+  if (due_after) {
+    conditions.push("due > ?");
+    params.push(due_after);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `
+    SELECT path, frontmatter_json, body_preview
+    FROM notes
+    ${where}
+    ORDER BY
+      CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+      due ASC NULLS LAST
+  `;
+
+  const rows = db.prepare(sql).all(...params) as Array<{
+    path: string;
+    frontmatter_json: string | null;
+    body_preview: string | null;
+  }>;
+
+  const tasks = rows.map((row) => ({
+    path: row.path,
+    frontmatter: row.frontmatter_json ? (JSON.parse(row.frontmatter_json) as Record<string, unknown>) : {},
+    body_preview: row.body_preview ?? "",
+  }));
+
+  return { tasks, count: tasks.length };
+}
+
+/** task_list via file scan (original implementation) */
+function taskListFileScan(
   vaultPath: string,
   options: {
     status?: string | string[];

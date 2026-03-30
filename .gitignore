@@ -1,2 +1,8 @@
 plugin/mcp-server/node_modules/
 plugin/mcp-server/dist/
+.worktrees/
+
+.vault-index.db
+.vault-index.db-wal
+.vault-index.db-shm
+.radar-port

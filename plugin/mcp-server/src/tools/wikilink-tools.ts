@@ -4,6 +4,8 @@ import { consolidateWikilinks, extractWikilinks } from "../wikilinks.js";
 import { parseNote } from "../frontmatter.js";
 import { vaultList } from "./vault-management.js";
 import { memoryRead } from "./memory.js";
+import type { Database as DatabaseType } from "better-sqlite3";
+import { incrementalSync } from "../sync.js";
 
 /** Recursively collect all .md files in the vault, skipping .obsidian */
 function allMdFiles(dirPath: string, vaultPath: string): string[] {
@@ -31,6 +33,7 @@ export function wikilinkConsolidate(
   vaultPath: string,
   name: string,
   dryRun: boolean = false,
+  db?: DatabaseType,
 ): {
   canonical: string;
   display_name: string;
@@ -110,6 +113,10 @@ export function wikilinkConsolidate(
     }
   }
 
+  if (!dryRun && db) {
+    incrementalSync(db, vaultPath);
+  }
+
   return {
     canonical: filename,
     display_name: displayName,
@@ -120,19 +127,108 @@ export function wikilinkConsolidate(
   };
 }
 
-/** wikilink_validate — find broken wikilinks in the vault */
-export function wikilinkValidate(
-  vaultPath: string,
-  directory?: string,
-  fixSuggestions: boolean = true,
-): {
+type ValidateResult = {
   broken_links: Array<{
     source_path: string;
     link_text: string;
     suggestions: string[];
   }>;
   count: number;
-} {
+};
+
+/** wikilink_validate (indexed) — find broken wikilinks using SQLite index */
+function wikilinkValidateIndexed(
+  db: DatabaseType,
+  directory: string | undefined,
+  fixSuggestions: boolean,
+): ValidateResult {
+  // Build known targets from the notes table
+  const knownTargets = new Map<string, string>(); // lowercase target → path
+
+  const noteRows = db
+    .prepare("SELECT path, title, frontmatter_json FROM notes")
+    .all() as Array<{ path: string; title: string | null; frontmatter_json: string | null }>;
+
+  for (const row of noteRows) {
+    const name = row.path.split("/").pop()?.replace(".md", "") ?? "";
+    knownTargets.set(name.toLowerCase(), row.path);
+
+    if (row.title) {
+      knownTargets.set(row.title.toLowerCase(), row.path);
+    }
+
+    if (row.frontmatter_json) {
+      try {
+        const fm = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
+        if (Array.isArray(fm.aliases)) {
+          for (const alias of fm.aliases) {
+            if (typeof alias === "string") {
+              knownTargets.set(alias.toLowerCase(), row.path);
+            }
+          }
+        }
+      } catch {
+        // Skip malformed JSON
+      }
+    }
+  }
+
+  // Get wikilinks, optionally filtered by directory
+  let wikilinkRows: Array<{ source_path: string; target_slug: string; display_text: string | null }>;
+
+  if (directory && directory !== ".") {
+    wikilinkRows = db
+      .prepare(
+        "SELECT source_path, target_slug, display_text FROM wikilinks WHERE source_path LIKE ?",
+      )
+      .all(`${directory}/%`) as typeof wikilinkRows;
+  } else {
+    wikilinkRows = db
+      .prepare("SELECT source_path, target_slug, display_text FROM wikilinks")
+      .all() as typeof wikilinkRows;
+  }
+
+  const brokenLinks: ValidateResult["broken_links"] = [];
+
+  for (const row of wikilinkRows) {
+    const target = row.target_slug.toLowerCase();
+    if (target.startsWith("#")) continue;
+    const baseTarget = target.split("#")[0].trim();
+    if (!baseTarget) continue;
+
+    if (!knownTargets.has(baseTarget)) {
+      const suggestions: string[] = [];
+      if (fixSuggestions) {
+        for (const [known, kPath] of knownTargets) {
+          if (known.includes(baseTarget) || baseTarget.includes(known)) {
+            suggestions.push(kPath);
+            if (suggestions.length >= 3) break;
+          }
+        }
+      }
+
+      // Reconstruct link_text from target_slug and display_text
+      const link_text = row.display_text
+        ? `[[${row.target_slug}|${row.display_text}]]`
+        : `[[${row.target_slug}]]`;
+
+      brokenLinks.push({
+        source_path: row.source_path,
+        link_text,
+        suggestions,
+      });
+    }
+  }
+
+  return { broken_links: brokenLinks, count: brokenLinks.length };
+}
+
+/** wikilink_validate (file scan) — find broken wikilinks by scanning files */
+function wikilinkValidateFileScan(
+  vaultPath: string,
+  directory: string | undefined,
+  fixSuggestions: boolean,
+): ValidateResult {
   const searchDir = directory ?? ".";
   const allFiles = allMdFiles(
     join(vaultPath, searchDir === "." ? "" : searchDir),
@@ -166,11 +262,7 @@ export function wikilinkValidate(
     }
   }
 
-  const brokenLinks: Array<{
-    source_path: string;
-    link_text: string;
-    suggestions: string[];
-  }> = [];
+  const brokenLinks: ValidateResult["broken_links"] = [];
 
   for (const filePath of allFiles) {
     let content: string;
@@ -211,4 +303,17 @@ export function wikilinkValidate(
   }
 
   return { broken_links: brokenLinks, count: brokenLinks.length };
+}
+
+/** wikilink_validate — find broken wikilinks in the vault */
+export function wikilinkValidate(
+  vaultPath: string,
+  directory?: string,
+  fixSuggestions: boolean = true,
+  db?: DatabaseType,
+): ValidateResult {
+  if (db) {
+    return wikilinkValidateIndexed(db, directory, fixSuggestions);
+  }
+  return wikilinkValidateFileScan(vaultPath, directory, fixSuggestions);
 }

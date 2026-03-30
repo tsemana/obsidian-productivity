@@ -12,14 +12,52 @@ import { taskCreate, taskUpdate, taskComplete, taskList } from "./tools/tasks.js
 import { memoryRead, memoryWrite, claudemdRead, claudemdUpdate } from "./tools/memory.js";
 import { wikilinkConsolidate, wikilinkValidate } from "./tools/wikilink-tools.js";
 import { baseRead, baseWrite, canvasRead, canvasWrite } from "./tools/bases-canvas.js";
+import { openDatabase, closeDatabase } from "./index-db.js";
+import { runSync, reindexFile } from "./sync.js";
+import { startSidecar, stopSidecar } from "./http-sidecar.js";
+import { accountRegister, accountSync } from "./tools/external.js";
+import { radarGenerate, radarUpdateItem } from "./tools/radar.js";
 
 const server = new McpServer({
   name: "obsidian-vault",
-  version: "0.7.0",
+  version: "0.8.0",
 });
 
 // Resolve vault path once at startup
 const vaultPath = resolveVaultPath();
+
+// Initialize SQLite index
+let db: import("better-sqlite3").Database | null = null;
+let sidecarPort: number | undefined;
+
+if (vaultPath) {
+  try {
+    db = openDatabase(vaultPath);
+    const syncResult = runSync(db, vaultPath);
+    console.error(`Vault sync: ${syncResult.mode}, added=${syncResult.added}, updated=${syncResult.updated}, deleted=${syncResult.deleted}`);
+  } catch (e) {
+    console.error("SQLite init failed, continuing without index:", e);
+    db = null;
+  }
+
+  // Start HTTP sidecar
+  try {
+    sidecarPort = await startSidecar(vaultPath, {
+      onSync: async () => {
+        if (db) {
+          await accountSync(db);
+          await radarGenerate(db, vaultPath, { sidecarPort });
+        }
+      },
+      onRadarItemUpdate: (path, state) => {
+        radarUpdateItem(vaultPath, { path, state });
+      },
+    });
+    console.error(`HTTP sidecar listening on port ${sidecarPort}`);
+  } catch (e) {
+    console.error("HTTP sidecar failed to start:", e);
+  }
+}
 
 function requireVault(): string {
   if (!vaultPath) {
@@ -85,7 +123,7 @@ server.tool(
     filename: z.string().optional().describe("Custom filename slug; auto-generated from title if omitted"),
   },
   async (params) => ({
-    content: [{ type: "text", text: JSON.stringify(taskCreate(requireVault(), params), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(taskCreate(requireVault(), params, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -103,7 +141,7 @@ server.tool(
   },
   async ({ path, frontmatter, append_body, replace_section }) => ({
     content: [{ type: "text", text: JSON.stringify(
-      taskUpdate(requireVault(), path, { frontmatter, append_body, replace_section }), null, 2,
+      taskUpdate(requireVault(), path, { frontmatter, append_body, replace_section }, db ?? undefined), null, 2,
     ) }],
   }),
 );
@@ -115,7 +153,7 @@ server.tool(
     path: z.string().describe("Relative path to the task file in tasks/"),
   },
   async ({ path }) => ({
-    content: [{ type: "text", text: JSON.stringify(taskComplete(requireVault(), path), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(taskComplete(requireVault(), path, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -133,7 +171,7 @@ server.tool(
     assigned_to: z.string().optional().describe("Filter by assigned-to wikilink substring"),
   },
   async (params) => ({
-    content: [{ type: "text", text: JSON.stringify(taskList(requireVault(), params), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(taskList(requireVault(), params, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -148,7 +186,7 @@ server.tool(
     type: z.enum(["person", "project", "glossary", "context", "any"]).optional().describe("Narrow search scope"),
   },
   async (params) => ({
-    content: [{ type: "text", text: JSON.stringify(memoryRead(requireVault(), params), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(memoryRead(requireVault(), params, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -167,7 +205,7 @@ server.tool(
     create_only: z.boolean().optional().describe("Fail if file already exists"),
   },
   async ({ path, ...options }) => ({
-    content: [{ type: "text", text: JSON.stringify(memoryWrite(requireVault(), path, options), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(memoryWrite(requireVault(), path, options, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -219,9 +257,13 @@ server.tool(
     raw: z.string().optional().describe("Raw file content (for non-markdown: .base YAML, .canvas JSON, .json)"),
     overwrite: z.boolean().optional().describe("If false, fail when file exists"),
   },
-  async ({ path, ...options }) => ({
-    content: [{ type: "text", text: JSON.stringify(noteWrite(requireVault(), path, options), null, 2) }],
-  }),
+  async ({ path, ...options }) => {
+    const result = noteWrite(requireVault(), path, options);
+    if (!("error" in result) && db && path.endsWith(".md")) {
+      reindexFile(db, requireVault(), path);
+    }
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
 );
 
 server.tool(
@@ -235,7 +277,7 @@ server.tool(
     limit: z.number().optional().describe("Max results (default: 50)"),
   },
   async (params) => ({
-    content: [{ type: "text", text: JSON.stringify(noteSearch(requireVault(), params), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(noteSearch(requireVault(), params, db ?? undefined), null, 2) }],
   }),
 );
 
@@ -262,7 +304,7 @@ server.tool(
   },
   async ({ name, dry_run }) => ({
     content: [{ type: "text", text: JSON.stringify(
-      wikilinkConsolidate(requireVault(), name, dry_run), null, 2,
+      wikilinkConsolidate(requireVault(), name, dry_run, db ?? undefined), null, 2,
     ) }],
   }),
 );
@@ -276,7 +318,7 @@ server.tool(
   },
   async ({ directory, fix_suggestions }) => ({
     content: [{ type: "text", text: JSON.stringify(
-      wikilinkValidate(requireVault(), directory, fix_suggestions), null, 2,
+      wikilinkValidate(requireVault(), directory, fix_suggestions, db ?? undefined), null, 2,
     ) }],
   }),
 );
@@ -360,10 +402,78 @@ server.tool(
   }),
 );
 
+// ─── Group 8: External Accounts ───────────────────────────────────────────
+
+server.tool(
+  "account_register",
+  "Register a Google account for calendar and email syncing. Requires gcloud CLI authentication.",
+  {
+    id: z.string().describe("Short label for the account, e.g. 'work', 'personal'"),
+    email: z.string().describe("Google account email address"),
+    context: z.string().optional().describe("Context label: 'work' or 'personal'"),
+  },
+  async (params) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    return { content: [{ type: "text", text: JSON.stringify(accountRegister(db, params), null, 2) }] };
+  },
+);
+
+server.tool(
+  "account_sync",
+  "Sync calendar events and email from registered Google accounts into the local cache.",
+  {
+    id: z.string().optional().describe("Sync a specific account by id, or omit to sync all"),
+    timeZone: z.string().optional().describe("IANA timezone, e.g. 'America/New_York'"),
+  },
+  async (params) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await accountSync(db, params);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ─── Group 9: Radar ───────────────────────────────────────────────────────
+
+server.tool(
+  "radar_generate",
+  "Generate daily radar HTML briefing. Syncs all accounts first, then renders tasks, calendar, and email into a single HTML file.",
+  {
+    date: z.string().optional().describe("Date in YYYY-MM-DD format (default: today)"),
+  },
+  async ({ date }) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    const result = await radarGenerate(db, requireVault(), { date, sidecarPort });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "radar_update_item",
+  "Update a single item's visual state in today's radar HTML (strikethrough for resolved, restore for active).",
+  {
+    path: z.string().describe("Vault-relative path to the task, e.g. 'tasks/review-budget.md'"),
+    state: z.enum(["resolved", "active"]).describe("Visual state to apply"),
+    date: z.string().optional().describe("Radar date (default: today)"),
+  },
+  async ({ path, state, date }) => ({
+    content: [{ type: "text", text: JSON.stringify(radarUpdateItem(requireVault(), { path, state, date }), null, 2) }],
+  }),
+);
+
 // ─── Start Server ──────────────────────────────────────────────────────────
 
 async function main() {
   const transport = new StdioServerTransport();
+
+  // Graceful shutdown
+  const shutdown = () => {
+    stopSidecar();
+    closeDatabase();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
   await server.connect(transport);
 }
 
