@@ -90,6 +90,16 @@ function contentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+/** Coerce a frontmatter value to a string safe for SQLite binding.
+ *  gray-matter parses YAML dates as Date objects — SQLite can only bind
+ *  strings, numbers, bigints, buffers, and null. */
+function fmStr(val: unknown): string | null {
+  if (val == null) return null;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (typeof val === "string") return val;
+  return String(val);
+}
+
 /** Extract indexable fields from a parsed note */
 function extractNoteRow(
   filePath: string,
@@ -103,16 +113,16 @@ function extractNoteRow(
 
   return {
     path: filePath,
-    title: (fm.title as string) ?? null,
+    title: fmStr(fm.title),
     tags: Array.isArray(fm.tags) ? JSON.stringify(fm.tags) : null,
-    status: (fm.status as string) ?? null,
-    priority: (fm.priority as string) ?? null,
-    due: (fm.due as string) ?? null,
-    context: (fm.context as string) ?? null,
-    project: (fm.project as string) ?? null,
-    assigned_to: (fm["assigned-to"] as string) ?? null,
-    area: (fm.area as string) ?? null,
-    created: (fm.created as string) ?? null,
+    status: fmStr(fm.status),
+    priority: fmStr(fm.priority),
+    due: fmStr(fm.due),
+    context: fmStr(fm.context),
+    project: fmStr(fm.project),
+    assigned_to: fmStr(fm["assigned-to"]),
+    area: fmStr(fm.area),
+    created: fmStr(fm.created),
     modified_at: mtime,
     content_hash: hash,
     body_preview: bodyPreview,
