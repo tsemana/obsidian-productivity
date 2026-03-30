@@ -67,7 +67,7 @@ export interface TaskWithNextAction extends TaskRow {
 export interface WaitingTask extends TaskRow {
   days_waiting: number;
   waiting_on: string | null;
-  calendar_match: Pick<EventRow, "id" | "title" | "start_time"> | null;
+  upcoming_meeting: string | null;
 }
 
 export interface ProjectNextAction {
@@ -88,12 +88,13 @@ export interface RadarDataResult {
   overdue_tasks: TaskWithNextAction[];
   active_tasks: TaskWithNextAction[];
   waiting_tasks: WaitingTask[];
-  project_next_actions: ProjectNextAction[];
+  next_actions_by_project: ProjectNextAction[];
   inbox_count: number;
   stuck_projects: StuckProject[];
   calendar_events: Array<EventRow & { account_email: string; context: string | null }>;
   emails: EmailRow[];
-  claudemd: string;
+  memory_context: string;
+  sources_available: { vault: boolean; calendar: boolean; email: boolean };
 }
 
 export interface InboxItem {
@@ -223,7 +224,7 @@ function buildWaitingTasks(
     const waitingOn = (fm["waiting-on"] as string | undefined) ?? null;
 
     // Attempt calendar cross-reference
-    let calendarMatch: Pick<EventRow, "id" | "title" | "start_time"> | null = null;
+    let upcomingMeeting: string | null = null;
     if (waitingOn) {
       const needle = waitingOn.toLowerCase();
       const match = upcomingEvents.find((e) => {
@@ -237,7 +238,15 @@ function buildWaitingTasks(
         return false;
       });
       if (match) {
-        calendarMatch = { id: match.id, title: match.title, start_time: match.start_time };
+        const eventDate = new Date(match.start_time);
+        const todayDate = new Date(today);
+        const diffDays = Math.ceil((eventDate.getTime() - todayDate.getTime()) / 86400000);
+        const relativeStr = diffDays === 0
+          ? "today"
+          : diffDays === 1
+            ? "tomorrow"
+            : `in ${diffDays} days`;
+        upcomingMeeting = `${match.title} ${relativeStr} — follow up?`;
       }
     }
 
@@ -245,7 +254,7 @@ function buildWaitingTasks(
       ...task,
       days_waiting: Math.max(0, daysWaiting),
       waiting_on: waitingOn,
-      calendar_match: calendarMatch,
+      upcoming_meeting: upcomingMeeting,
     };
   });
 }
@@ -381,23 +390,37 @@ export async function radarData(
   `).all() as EmailRow[];
 
   // CLAUDE.md
-  let claudemd = "";
+  let memory_context = "";
   const claudemdPath = join(vaultPath, "CLAUDE.md");
   if (existsSync(claudemdPath)) {
-    try { claudemd = readFileSync(claudemdPath, "utf-8"); } catch {}
+    try { memory_context = readFileSync(claudemdPath, "utf-8"); } catch {}
   }
+
+  // Determine sources availability
+  const vaultAvailable = true;
+  let calendarAvailable = false;
+  let emailAvailable = false;
+  try {
+    const calCount = (db.prepare("SELECT COUNT(*) as cnt FROM calendar_events").get() as { cnt: number }).cnt;
+    calendarAvailable = calCount > 0;
+  } catch {}
+  try {
+    const emailCount = (db.prepare("SELECT COUNT(*) as cnt FROM email_cache").get() as { cnt: number }).cnt;
+    emailAvailable = emailCount > 0;
+  } catch {}
 
   return {
     date,
     overdue_tasks: overdueTasks,
     active_tasks: activeTasks,
     waiting_tasks: waitingTasks,
-    project_next_actions: projectNextActions,
+    next_actions_by_project: projectNextActions,
     inbox_count: inboxCount,
     stuck_projects: stuckProjects,
     calendar_events: calendarEvents,
     emails,
-    claudemd,
+    memory_context,
+    sources_available: { vault: vaultAvailable, calendar: calendarAvailable, email: emailAvailable },
   };
 }
 
@@ -852,15 +875,6 @@ export async function searchAndSummarize(
     .map((t) => `"${t.replace(/"/g, '""')}"`)
     .join(" ");
 
-  // Build directory filter (escape single quotes)
-  let dirFilter = "";
-  const dirParams: string[] = [];
-  if (directory) {
-    const safeDir = directory.replace(/'/g, "''");
-    dirFilter = `AND n.path LIKE '${safeDir}/%'`;
-    void dirParams; // dirFilter uses inline escaping; no additional params needed
-  }
-
   interface SearchRow {
     path: string;
     title: string | null;
@@ -871,29 +885,53 @@ export async function searchAndSummarize(
 
   let rows: SearchRow[] = [];
 
-  // Try snippet() first
+  // Try snippet() first — use separate prepared statements to avoid string interpolation
   try {
-    rows = db.prepare(`
-      SELECT n.path, n.title,
-             snippet(notes_fts, 1, '[', ']', '...', 15) as snippet,
-             bm25(notes_fts) as rank,
-             n.frontmatter_json
-      FROM notes_fts fts
-      JOIN notes n ON n.rowid = fts.rowid
-      WHERE notes_fts MATCH ? ${dirFilter}
-      ORDER BY rank
-      LIMIT ?
-    `).all(ftsQuery, limit) as SearchRow[];
+    if (directory) {
+      rows = db.prepare(`
+        SELECT n.path, n.title,
+               snippet(notes_fts, 1, '[', ']', '...', 15) as snippet,
+               bm25(notes_fts) as rank,
+               n.frontmatter_json
+        FROM notes_fts fts
+        JOIN notes n ON n.rowid = fts.rowid
+        WHERE notes_fts MATCH ? AND n.path LIKE ?
+        ORDER BY rank
+        LIMIT ?
+      `).all(ftsQuery, `${directory}/%`, limit) as SearchRow[];
+    } else {
+      rows = db.prepare(`
+        SELECT n.path, n.title,
+               snippet(notes_fts, 1, '[', ']', '...', 15) as snippet,
+               bm25(notes_fts) as rank,
+               n.frontmatter_json
+        FROM notes_fts fts
+        JOIN notes n ON n.rowid = fts.rowid
+        WHERE notes_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `).all(ftsQuery, limit) as SearchRow[];
+    }
   } catch {
     // Fallback: use body_preview
     try {
-      rows = db.prepare(`
-        SELECT n.path, n.title, n.body_preview as snippet, 0 as rank, n.frontmatter_json
-        FROM notes_fts fts
-        JOIN notes n ON n.rowid = fts.rowid
-        WHERE notes_fts MATCH ? ${dirFilter}
-        LIMIT ?
-      `).all(ftsQuery, limit) as SearchRow[];
+      if (directory) {
+        rows = db.prepare(`
+          SELECT n.path, n.title, n.body_preview as snippet, 0 as rank, n.frontmatter_json
+          FROM notes_fts fts
+          JOIN notes n ON n.rowid = fts.rowid
+          WHERE notes_fts MATCH ? AND n.path LIKE ?
+          LIMIT ?
+        `).all(ftsQuery, `${directory}/%`, limit) as SearchRow[];
+      } else {
+        rows = db.prepare(`
+          SELECT n.path, n.title, n.body_preview as snippet, 0 as rank, n.frontmatter_json
+          FROM notes_fts fts
+          JOIN notes n ON n.rowid = fts.rowid
+          WHERE notes_fts MATCH ?
+          LIMIT ?
+        `).all(ftsQuery, limit) as SearchRow[];
+      }
     } catch {}
   }
 
