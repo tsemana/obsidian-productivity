@@ -93,16 +93,16 @@ Claude Code discovers plugins through marketplaces. This repo serves as its own 
    export OBSIDIAN_VAULT_PATH="$HOME/Documents/MyVault"
    ```
 
-4. **Build the MCP server** (if not pre-built):
+4. **Install MCP server dependencies** (one-time, required for the native SQLite module):
    ```bash
-   cd plugin/mcp-server
-   npm install
-   npm run build
+   cd ~/.claude/plugins/cache/obsidian-productivity-marketplace/obsidian-productivity/*/mcp-server && npm install
    ```
 
 5. **Run `/vault-init`** and **`/start`** as with Cowork
 
-Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 23 MCP tools are available for vault operations.
+Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 32 MCP tools are available for vault operations.
+
+   **If `/mcp` shows `obsidian-vault` as failed:** Run the `npm install` step above (the MCP server needs `better-sqlite3`, a native module that must be installed locally). Then restart Claude Code.
 
 **Updating the plugin:** Run `/plugin` and check for updates, or re-add the marketplace to pull the latest version. Rebuild the MCP server if tools changed (`cd plugin/mcp-server && npm run build`).
 
