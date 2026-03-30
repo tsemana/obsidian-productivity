@@ -1,6 +1,6 @@
 {
   "name": "obsidian-productivity",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "description": "Obsidian-native productivity system: task management, workplace memory, and Obsidian-flavored markdown skills. Combines the productivity plugin's task/memory system with Obsidian's markdown, Bases, Canvas, and CLI skills — everything lives in your vault as linked, searchable notes. Includes an MCP server for vault operations across Claude Desktop, Cowork, and Claude Code.",
   "author": {
     "name": "Tony Semana"
