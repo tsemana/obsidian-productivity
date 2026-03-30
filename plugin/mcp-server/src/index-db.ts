@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
 
 const DB_FILENAME = ".vault-index.db";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let db: DatabaseType | null = null;
 
@@ -46,8 +46,12 @@ function runMigrations(db: DatabaseType): void {
 
   if (currentVersion < 1) {
     migrateV1(db);
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
   }
+  if (currentVersion < 2) {
+    migrateV2(db);
+  }
+
+  db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
 function migrateV1(db: DatabaseType): void {
@@ -147,5 +151,11 @@ function migrateV1(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_email_date ON email_cache(date);
     CREATE INDEX IF NOT EXISTS idx_email_account ON email_cache(account_id);
     CREATE INDEX IF NOT EXISTS idx_reflog_path ON reference_log(path, referenced_at);
+  `);
+}
+
+function migrateV2(db: DatabaseType): void {
+  db.exec(`
+    ALTER TABLE external_accounts ADD COLUMN refresh_token TEXT;
   `);
 }
