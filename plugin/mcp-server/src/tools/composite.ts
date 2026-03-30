@@ -43,7 +43,7 @@ function extractKeywords(text: string): string {
   const words = text.split(/\s+/);
   const filtered = words
     .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ""))
-    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
   // Deduplicate and take top 5
   const seen = new Set<string>();
@@ -79,20 +79,21 @@ export interface ProjectNextAction {
 }
 
 export interface StuckProject {
-  project_path: string;
-  project_title: string | null;
+  path: string;
+  title: string | null;
+  active_task_count: number;
 }
 
 export interface RadarDataResult {
   date: string;
-  overdue_tasks: TaskWithNextAction[];
-  active_tasks: TaskWithNextAction[];
-  waiting_tasks: WaitingTask[];
-  next_actions_by_project: ProjectNextAction[];
-  inbox_count: number;
-  stuck_projects: StuckProject[];
-  calendar_events: Array<EventRow & { account_email: string; context: string | null }>;
-  emails: EmailRow[];
+  vault: {
+    tasks: { overdue: TaskWithNextAction[]; active: TaskWithNextAction[]; waiting: WaitingTask[] };
+    next_actions_by_project: ProjectNextAction[];
+    inbox_count: number;
+    stuck_projects: StuckProject[];
+  };
+  calendar: EventRow[];
+  email: EmailRow[];
   memory_context: string;
   sources_available: { vault: boolean; calendar: boolean; email: boolean };
 }
@@ -101,6 +102,7 @@ export interface InboxItem {
   path: string;
   title: string | null;
   created: string | null;
+  hint: string | null;
   body_preview: string | null;
 }
 
@@ -120,20 +122,20 @@ export interface ReferenceFrequency {
 
 export interface WeeklyReviewResult {
   date: string;
-  inbox_items: InboxItem[];
-  active_tasks: TaskWithNextAction[];
-  waiting_tasks: WaitingTask[];
-  projects: ProjectSummary[];
-  stuck_projects: StuckProject[];
-  someday_tasks: TaskRow[];
-  calendar_events: Array<EventRow & { account_email: string; context: string | null }>;
-  reference_log: ReferenceFrequency[];
-  claudemd: string;
+  inbox: { items: InboxItem[]; count: number };
+  active_tasks: { items: TaskWithNextAction[]; count: number };
+  waiting_tasks: { items: WaitingTask[]; count: number };
+  projects: { active: ProjectSummary[]; stuck: StuckProject[]; count: number };
+  someday: { items: TaskWithNextAction[]; count: number };
+  calendar_ahead: EventRow[];
+  calendar_behind: EventRow[];
+  memory: { claudemd: string; reference_frequency: ReferenceFrequency[] };
 }
 
 export interface PersonRef {
   path: string;
   name: string | null;
+  role: string | null;
 }
 
 export interface FtsMatch {
@@ -144,18 +146,14 @@ export interface FtsMatch {
 }
 
 export interface WikilinkConnection {
-  path: string;
-  title: string | null;
-  direction: "outgoing" | "incoming";
+  source_path: string;
+  target_slug: string;
+  display_text: string | null;
 }
 
 export interface ProjectOverviewResult {
-  project_path: string;
-  project_title: string | null;
-  project_frontmatter: Record<string, unknown> | null;
-  active_tasks: TaskWithNextAction[];
-  waiting_tasks: WaitingTask[];
-  completed_recent: TaskRow[];
+  project: { path: string; frontmatter: Record<string, unknown> | null; body: string };
+  tasks: { active: TaskWithNextAction[]; waiting: WaitingTask[]; completed_recent: TaskRow[]; count: number };
   people: PersonRef[];
   recent_mentions: FtsMatch[];
   wikilink_connections: WikilinkConnection[];
@@ -169,8 +167,9 @@ export interface SuggestedLink {
 
 export interface QuickCaptureResult {
   path: string;
-  created: boolean;
+  hint: string | null;
   suggested_links: SuggestedLink[];
+  message: string;
 }
 
 export interface SearchHit {
@@ -184,8 +183,8 @@ export interface SearchHit {
 export interface SearchResult {
   query: string;
   directory: string | null;
-  total: number;
-  hits: SearchHit[];
+  count: number;
+  results: SearchHit[];
 }
 
 // ─── Helper: build WaitingTask with calendar cross-ref ───────────────────────
@@ -361,8 +360,9 @@ export async function radarData(
 
     if (countRow.cnt === 0) {
       stuckProjects.push({
-        project_path: proj.path,
-        project_title: proj.title,
+        path: proj.path,
+        title: proj.title,
+        active_task_count: 0,
       });
     }
   }
@@ -411,14 +411,14 @@ export async function radarData(
 
   return {
     date,
-    overdue_tasks: overdueTasks,
-    active_tasks: activeTasks,
-    waiting_tasks: waitingTasks,
-    next_actions_by_project: projectNextActions,
-    inbox_count: inboxCount,
-    stuck_projects: stuckProjects,
-    calendar_events: calendarEvents,
-    emails,
+    vault: {
+      tasks: { overdue: overdueTasks, active: activeTasks, waiting: waitingTasks },
+      next_actions_by_project: projectNextActions,
+      inbox_count: inboxCount,
+      stuck_projects: stuckProjects,
+    },
+    calendar: calendarEvents,
+    email: emails,
     memory_context,
     sources_available: { vault: vaultAvailable, calendar: calendarAvailable, email: emailAvailable },
   };
@@ -433,11 +433,28 @@ export async function weeklyReview(
   const date = todayStr();
 
   // Inbox items
+  interface InboxRow {
+    path: string;
+    title: string | null;
+    created: string | null;
+    body_preview: string | null;
+    frontmatter_json: string | null;
+  }
   const inboxRaw = db.prepare(`
-    SELECT path, title, created, body_preview FROM notes
+    SELECT path, title, created, body_preview, frontmatter_json FROM notes
     WHERE path LIKE 'inbox/%'
     ORDER BY created DESC NULLS LAST
-  `).all() as InboxItem[];
+  `).all() as InboxRow[];
+  const inboxItems: InboxItem[] = inboxRaw.map((row) => {
+    let hint: string | null = null;
+    if (row.frontmatter_json) {
+      try {
+        const fm = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
+        hint = typeof fm["hint"] === "string" ? fm["hint"] : null;
+      } catch {}
+    }
+    return { path: row.path, title: row.title, created: row.created, hint, body_preview: row.body_preview };
+  });
 
   // Active tasks (all)
   const activeRaw = db.prepare(`
@@ -520,19 +537,23 @@ export async function weeklyReview(
     });
 
     if (activeCount === 0 && waitingCount === 0) {
-      stuckProjects.push({ project_path: proj.path, project_title: proj.title });
+      stuckProjects.push({ path: proj.path, title: proj.title, active_task_count: 0 });
     }
   }
 
   // Someday tasks
-  const somedayTasks = db.prepare(`
+  const somedayRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
     WHERE tags LIKE '%"task"%' AND status = 'someday'
     AND path LIKE 'tasks/%'
     ORDER BY title ASC NULLS LAST
   `).all() as TaskRow[];
+  const somedayTasks: TaskWithNextAction[] = somedayRaw.map((t) => ({
+    ...t,
+    next_action: extractNextAction(t.body_preview),
+  }));
 
-  // Calendar: 2 weeks forward + 1 week back
+  // Calendar: split into ahead (2 weeks) and behind (1 week)
   const weekBack = new Date(new Date(date).getTime() - 7 * 86400000)
     .toISOString()
     .slice(0, 10);
@@ -540,16 +561,24 @@ export async function weeklyReview(
     .toISOString()
     .slice(0, 10) + "T23:59:59";
 
-  const calendarEvents = db.prepare(`
+  const calendarAhead = db.prepare(`
     SELECT ce.*, ea.account_email, ea.context
     FROM calendar_events ce
     JOIN external_accounts ea ON ce.account_id = ea.id
     WHERE ce.start_time >= ? AND ce.start_time <= ?
     ORDER BY ce.start_time
-  `).all(`${weekBack}T00:00:00`, twoWeeksAhead) as Array<EventRow & { account_email: string; context: string | null }>;
+  `).all(`${date}T00:00:00`, twoWeeksAhead) as EventRow[];
 
-  // Reference log: top 30 by count
-  const referenceLog = db.prepare(`
+  const calendarBehind = db.prepare(`
+    SELECT ce.*, ea.account_email, ea.context
+    FROM calendar_events ce
+    JOIN external_accounts ea ON ce.account_id = ea.id
+    WHERE ce.start_time >= ? AND ce.start_time < ?
+    ORDER BY ce.start_time DESC
+  `).all(`${weekBack}T00:00:00`, `${date}T00:00:00`) as EventRow[];
+
+  // Reference frequency: top 30 by count
+  const referenceFrequency = db.prepare(`
     SELECT path, COUNT(*) as count
     FROM reference_log
     GROUP BY path
@@ -566,15 +595,14 @@ export async function weeklyReview(
 
   return {
     date,
-    inbox_items: inboxRaw,
-    active_tasks: activeTasks,
-    waiting_tasks: waitingTasks,
-    projects,
-    stuck_projects: stuckProjects,
-    someday_tasks: somedayTasks,
-    calendar_events: calendarEvents,
-    reference_log: referenceLog,
-    claudemd,
+    inbox: { items: inboxItems, count: inboxItems.length },
+    active_tasks: { items: activeTasks, count: activeTasks.length },
+    waiting_tasks: { items: waitingTasks, count: waitingTasks.length },
+    projects: { active: projects, stuck: stuckProjects, count: projects.length },
+    someday: { items: somedayTasks, count: somedayTasks.length },
+    calendar_ahead: calendarAhead,
+    calendar_behind: calendarBehind,
+    memory: { claudemd, reference_frequency: referenceFrequency },
   };
 }
 
@@ -686,7 +714,7 @@ export async function projectOverview(
       "SELECT path, title FROM notes WHERE path = ?",
     ).get(personPath) as { path: string; title: string | null } | undefined;
     if (personNote) {
-      people.push({ path: personNote.path, name: personNote.title ?? link.display_text });
+      people.push({ path: personNote.path, name: personNote.title ?? link.display_text, role: null });
     }
   }
 
@@ -716,40 +744,50 @@ export async function projectOverview(
   // Wikilink connections: outgoing + incoming
   const wikilinks: WikilinkConnection[] = [];
 
-  // Outgoing
+  // Outgoing: source is the project note, target is link.target_slug
   for (const link of outgoingLinks) {
-    const targetNote = db.prepare(
-      "SELECT path, title FROM notes WHERE path = ? OR path LIKE ?",
-    ).get(`${link.target_slug}.md`, `%/${link.target_slug}.md`) as { path: string; title: string | null } | undefined;
-    if (targetNote) {
-      wikilinks.push({ path: targetNote.path, title: targetNote.title, direction: "outgoing" });
-    }
+    wikilinks.push({
+      source_path: projectNote.path,
+      target_slug: link.target_slug,
+      display_text: link.display_text,
+    });
   }
 
-  // Incoming
+  // Incoming: source is whoever links to the project slug
+  const projectSlug = projectNote.path.replace(/^.*\//, "").replace(/\.md$/, "");
   interface IncomingRow {
     source_path: string;
-    title: string | null;
+    display_text: string;
   }
-  const projectSlug = projectNote.path.replace(/^.*\//, "").replace(/\.md$/, "");
   const incomingLinks = db.prepare(`
-    SELECT wl.source_path, n.title
+    SELECT wl.source_path, wl.display_text
     FROM wikilinks wl
-    JOIN notes n ON n.path = wl.source_path
     WHERE wl.target_slug = ?
   `).all(projectSlug) as IncomingRow[];
 
   for (const link of incomingLinks) {
-    wikilinks.push({ path: link.source_path, title: link.title, direction: "incoming" });
+    wikilinks.push({
+      source_path: link.source_path,
+      target_slug: projectSlug,
+      display_text: link.display_text,
+    });
+  }
+
+  // Read project note body
+  let projectBody = "";
+  const projectFilePath = join(vaultPath, projectNote.path);
+  if (existsSync(projectFilePath)) {
+    try { projectBody = readFileSync(projectFilePath, "utf-8"); } catch {}
   }
 
   return {
-    project_path: projectNote.path,
-    project_title: projectNote.title,
-    project_frontmatter: projectFrontmatter,
-    active_tasks: activeTasks,
-    waiting_tasks: waitingTasks,
-    completed_recent: completedRecent,
+    project: { path: projectNote.path, frontmatter: projectFrontmatter, body: projectBody },
+    tasks: {
+      active: activeTasks,
+      waiting: waitingTasks,
+      completed_recent: completedRecent,
+      count: activeTasks.length + waitingTasks.length,
+    },
     people,
     recent_mentions: recentMentions,
     wikilink_connections: wikilinks,
@@ -768,26 +806,26 @@ export async function quickCapture(
 ): Promise<QuickCaptureResult> {
   const { thought, hint } = options;
   let capturedPath: string;
-  let created = false;
+  let message: string;
 
   if (hint === "task") {
     // Delegate to taskCreate
     const result = taskCreate(
       vaultPath,
-      { title: thought },
+      { title: thought, status: "active", priority: "medium" },
       db,
     );
     if ("error" in result) {
       // Fall back to inbox capture
-      capturedPath = await captureToInbox(db, vaultPath, thought);
-      created = true;
+      capturedPath = await captureToInbox(db, vaultPath, thought, hint ?? null);
+      message = `Captured to inbox: ${capturedPath}`;
     } else {
       capturedPath = result.path;
-      created = true;
+      message = `Task created: ${capturedPath}`;
     }
   } else {
-    capturedPath = await captureToInbox(db, vaultPath, thought);
-    created = true;
+    capturedPath = await captureToInbox(db, vaultPath, thought, hint ?? null);
+    message = `Captured to inbox: ${capturedPath}`;
   }
 
   // Suggested links via FTS5
@@ -825,23 +863,27 @@ export async function quickCapture(
     } catch {}
   }
 
-  return { path: capturedPath, created, suggested_links: suggestedLinks };
+  return { path: capturedPath, hint: hint ?? null, suggested_links: suggestedLinks, message };
 }
 
 async function captureToInbox(
   db: DatabaseType,
   vaultPath: string,
   thought: string,
+  hint: string | null,
 ): Promise<string> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const slug = slugify(thought).slice(0, 40) || "note";
   const inboxPath = `inbox/${timestamp}-${slug}.md`;
 
+  const frontmatter: Record<string, unknown> = {
+    captured: todayStr(),
+    processed: false,
+  };
+  if (hint !== null) frontmatter["hint"] = hint;
+
   const result = noteWrite(vaultPath, inboxPath, {
-    frontmatter: {
-      created: todayStr(),
-      tags: ["inbox"],
-    },
+    frontmatter,
     body: `# ${thought}\n`,
   });
 
@@ -964,7 +1006,7 @@ export async function searchAndSummarize(
   return {
     query,
     directory: directory ?? null,
-    total: hits.length,
-    hits,
+    count: hits.length,
+    results: hits,
   };
 }
