@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { accountSync } from "./external.js";
 import { radarData } from "./composite.js";
 import type { RadarDataResult, TaskWithNextAction, WaitingTask } from "./composite.js";
+export type { TaskRow, EventRow, EmailRow } from "./types.js";
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
@@ -259,49 +260,8 @@ export function radarUpdateItem(
   return { path: options.path, state: options.state, updated: true };
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────
-
-export interface TaskRow {
-  path: string;
-  title: string | null;
-  priority: string | null;
-  due: string | null;
-  body_preview: string | null;
-  frontmatter_json: string | null;
-}
-
-export interface EventRow {
-  id: string;
-  account_id: string;
-  calendar_id: string;
-  title: string;
-  start_time: string;
-  end_time: string | null;
-  all_day: number;
-  attendees: string | null;
-  location: string | null;
-  description: string | null;
-  html_link: string | null;
-  rsvp_status: string | null;
-  account_email: string;
-  context: string | null;
-}
-
-export interface EmailRow {
-  id: string;
-  account_id: string;
-  thread_id: string;
-  subject: string | null;
-  sender: string | null;
-  date: string | null;
-  labels: string | null;
-  snippet: string | null;
-  is_starred: number;
-  is_important: number;
-  html_link: string | null;
-  account_email: string;
-  context: string | null;
-}
+// Types re-exported from ./types.ts (see export at top of file)
+import type { TaskRow, EventRow, EmailRow } from "./types.js";
 
 // ─── HTML Renderer ────────────────────────────────────────────────────────
 

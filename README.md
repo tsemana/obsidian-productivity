@@ -24,6 +24,7 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | `/start` | Initialize vault structure, tasks, memory, templates, and Bases views |
 | `/update` | Triage stale items, check memory for gaps, sync from external tools |
 | `/update --comprehensive` | Deep scan email, calendar, chat — flag missed todos and suggest new memories |
+| `/review` | GTD Weekly Review — 7-step interactive walkthrough of inbox, tasks, projects, calendar, and memory |
 
 ## Skills
 
@@ -39,6 +40,8 @@ This plugin gives Claude a persistent understanding of your work, stored in your
 | `consolidate-on` | Standardise wikilinks for a person to canonical `[[filename\|Display Name]]` format |
 | `defuddle` | Clean markdown extraction from web pages |
 | `transcript-capture` | Turn a meeting transcript, call, or document into vault notes: reference in `memory/`, tasks in `tasks/`, and waiting-for notes for others' deliverables |
+| `daily-radar` | Dark-themed HTML briefing synthesizing calendar, email, and vault tasks with radar strip, timeline, and open loops |
+| `inbox-capture` | Two-speed thought capture: AI-assisted instant tasks or deferred inbox notes for later review |
 
 ## Getting Started
 
@@ -167,6 +170,9 @@ npm run build
 | Wikilinks | `wikilink_consolidate`, `wikilink_validate` |
 | Bases & Canvas | `base_read`, `base_write`, `canvas_read`, `canvas_write` |
 | Obsidian Config | `obsidian_config_read`, `obsidian_config_write` |
+| External Accounts | `account_register`, `account_sync` |
+| Radar | `radar_generate`, `radar_update_item` |
+| Composite Workflows | `radar_data`, `weekly_review`, `project_overview`, `quick_capture`, `search_and_summarize` |
 
 ## Data Sources
 

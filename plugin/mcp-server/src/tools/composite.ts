@@ -1,7 +1,7 @@
 import type { Database as DatabaseType } from "better-sqlite3";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { TaskRow, EventRow, EmailRow } from "./radar.js";
+import type { TaskRow, EventRow, EmailRow } from "./types.js";
 import { noteWrite } from "./notes.js";
 import { taskCreate } from "./tasks.js";
 import { reindexFile } from "../sync.js";
@@ -101,7 +101,7 @@ export interface RadarDataResult {
 export interface InboxItem {
   path: string;
   title: string | null;
-  created: string | null;
+  captured: string | null;
   hint: string | null;
   body_preview: string | null;
 }
@@ -266,10 +266,23 @@ export async function radarData(
   options: {
     date?: string;
     lookahead_days?: number;
+    include_email?: boolean;
+    include_calendar?: boolean;
   } = {},
 ): Promise<RadarDataResult> {
   const date = options.date ?? todayStr();
-  const lookaheadDays = options.lookahead_days ?? 3;
+  const includeEmail = options.include_email ?? true;
+  const includeCalendar = options.include_calendar ?? true;
+
+  // Default lookahead covers 3 business days (skips weekends)
+  let lookaheadDays = options.lookahead_days ?? 3;
+  if (options.lookahead_days === undefined) {
+    const dayOfWeek = new Date(date + "T12:00:00").getDay(); // 0=Sun, 4=Thu, 5=Fri
+    if (dayOfWeek === 4) lookaheadDays = 4;       // Thu: +4 covers Fri,Mon,Tue
+    else if (dayOfWeek === 5) lookaheadDays = 5;   // Fri: +5 covers Mon,Tue,Wed
+    else if (dayOfWeek === 6) lookaheadDays = 4;   // Sat: +4 covers Mon,Tue,Wed
+    else if (dayOfWeek === 0) lookaheadDays = 3;   // Sun: +3 covers Mon,Tue,Wed
+  }
 
   // Overdue tasks
   const overdueRaw = db.prepare(`
@@ -373,21 +386,27 @@ export async function radarData(
       .toISOString()
       .slice(0, 10) + "T23:59:59";
 
-  const calendarEvents = db.prepare(`
-    SELECT ce.*, ea.account_email, ea.context
-    FROM calendar_events ce
-    JOIN external_accounts ea ON ce.account_id = ea.id
-    WHERE ce.start_time >= ? AND ce.start_time <= ?
-    ORDER BY ce.start_time
-  `).all(`${date}T00:00:00`, lookaheadEnd) as Array<EventRow & { account_email: string; context: string | null }>;
+  let calendarEvents: EventRow[] = [];
+  if (includeCalendar) {
+    calendarEvents = db.prepare(`
+      SELECT ce.*, ea.account_email, ea.context
+      FROM calendar_events ce
+      JOIN external_accounts ea ON ce.account_id = ea.id
+      WHERE ce.start_time >= ? AND ce.start_time <= ?
+      ORDER BY ce.start_time
+    `).all(`${date}T00:00:00`, lookaheadEnd) as EventRow[];
+  }
 
   // Emails
-  const emails = db.prepare(`
-    SELECT ec.*, ea.account_email, ea.context
-    FROM email_cache ec
-    JOIN external_accounts ea ON ec.account_id = ea.id
-    ORDER BY ec.date DESC LIMIT 20
-  `).all() as EmailRow[];
+  let emails: EmailRow[] = [];
+  if (includeEmail) {
+    emails = db.prepare(`
+      SELECT ec.*, ea.account_email, ea.context
+      FROM email_cache ec
+      JOIN external_accounts ea ON ec.account_id = ea.id
+      ORDER BY ec.date DESC LIMIT 20
+    `).all() as EmailRow[];
+  }
 
   // CLAUDE.md
   let memory_context = "";
@@ -436,24 +455,30 @@ export async function weeklyReview(
   interface InboxRow {
     path: string;
     title: string | null;
-    created: string | null;
     body_preview: string | null;
     frontmatter_json: string | null;
+    modified_at: number | null;
   }
   const inboxRaw = db.prepare(`
-    SELECT path, title, created, body_preview, frontmatter_json FROM notes
+    SELECT path, title, body_preview, frontmatter_json, modified_at FROM notes
     WHERE path LIKE 'inbox/%'
-    ORDER BY created DESC NULLS LAST
+    ORDER BY modified_at DESC NULLS LAST
   `).all() as InboxRow[];
   const inboxItems: InboxItem[] = inboxRaw.map((row) => {
     let hint: string | null = null;
+    let captured: string | null = null;
     if (row.frontmatter_json) {
       try {
         const fm = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
         hint = typeof fm["hint"] === "string" ? fm["hint"] : null;
+        captured = typeof fm["captured"] === "string" ? fm["captured"] : null;
       } catch {}
     }
-    return { path: row.path, title: row.title, created: row.created, hint, body_preview: row.body_preview };
+    // Fall back to modified_at if captured not in frontmatter
+    if (!captured && row.modified_at) {
+      captured = new Date(row.modified_at).toISOString().slice(0, 10);
+    }
+    return { path: row.path, title: row.title, captured, hint, body_preview: row.body_preview };
   });
 
   // Active tasks (all)
