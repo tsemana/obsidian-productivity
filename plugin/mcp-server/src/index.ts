@@ -415,7 +415,7 @@ server.tool(
   },
   async (params) => {
     if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
-    return { content: [{ type: "text", text: JSON.stringify(accountRegister(db, params), null, 2) }] };
+    return { content: [{ type: "text", text: JSON.stringify(await accountRegister(db, params), null, 2) }] };
   },
 );
 

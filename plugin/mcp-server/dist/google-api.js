@@ -1,19 +1,39 @@
 import { execFileSync } from "node:child_process";
+import { refreshAccessToken } from "./google-oauth.js";
 // ─── Token Acquisition ────────────────────────────────────────────────────
-/** Get an access token for a Google account via gcloud CLI */
-export function getAccessToken(email) {
+/**
+ * Get an access token for a Google account.
+ * Prefers OAuth2 refresh token if available and client credentials are set.
+ * Falls back to gcloud CLI if not.
+ */
+export async function getAccessToken(db, accountId) {
+    const account = db
+        .prepare("SELECT account_email, refresh_token FROM external_accounts WHERE id = ?")
+        .get(accountId);
+    if (!account) {
+        throw new Error(`Account "${accountId}" not found in external_accounts`);
+    }
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    // OAuth2 path: use stored refresh token
+    if (account.refresh_token && clientId && clientSecret) {
+        const tokens = await refreshAccessToken(account.refresh_token, clientId, clientSecret);
+        return tokens.access_token;
+    }
+    // Fallback: gcloud CLI
+    if (account.refresh_token && (!clientId || !clientSecret)) {
+        console.error(`Warning: Account "${accountId}" has a refresh token but GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not set. Falling back to gcloud.`);
+    }
     try {
-        const token = execFileSync("gcloud", ["auth", "print-access-token", `--account=${email}`], {
-            encoding: "utf-8",
-            timeout: 15000,
-        }).trim();
-        if (!token) {
-            throw new Error(`Empty token returned for ${email}`);
-        }
+        const token = execFileSync("gcloud", ["auth", "print-access-token", `--account=${account.account_email}`], { encoding: "utf-8", timeout: 15000 }).trim();
+        if (!token)
+            throw new Error(`Empty token returned for ${account.account_email}`);
         return token;
     }
     catch (e) {
-        throw new Error(`Failed to get access token for ${email}. Run: gcloud auth login ${email}\n${e}`);
+        throw new Error(`Failed to get access token for ${account.account_email}. ` +
+            `Either configure OAuth (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET via Varlock) ` +
+            `or run: gcloud auth login ${account.account_email}\n${e}`);
     }
 }
 /** Fetch calendar events for an account */
@@ -127,7 +147,7 @@ export async function fetchEmails(token, accountEmail, options = {}) {
 // ─── Cache Sync ───────────────────────────────────────────────────────────
 /** Sync a single account's calendar and email data into SQLite cache */
 export async function syncAccount(db, accountId, email, options = {}) {
-    const token = getAccessToken(email);
+    const token = await getAccessToken(db, accountId);
     const now = Date.now();
     // Sync calendar
     const events = await fetchCalendarEvents(token, { timeZone: options.timeZone });

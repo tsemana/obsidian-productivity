@@ -1,6 +1,10 @@
 import type { Database as DatabaseType } from "better-sqlite3";
-/** Get an access token for a Google account via gcloud CLI */
-export declare function getAccessToken(email: string): string;
+/**
+ * Get an access token for a Google account.
+ * Prefers OAuth2 refresh token if available and client credentials are set.
+ * Falls back to gcloud CLI if not.
+ */
+export declare function getAccessToken(db: DatabaseType, accountId: string): Promise<string>;
 interface CalendarEvent {
     id: string;
     calendar_id: string;
