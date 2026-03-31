@@ -122,9 +122,9 @@ Classify items into three tiers:
 - Chase emails (someone following up for the 2nd+ time)
 
 **👀 Watch (orange)** — upcoming deadlines, blocked items, prep needed:
-- Tasks due within the next 7 days
-- Waiting-for items that are blocking something
-- Meetings next week that need prep (shared decks, agendas)
+- Tasks due within the next 7 days — state what the task is, not just "due soon"
+- Waiting-for items that are blocking something — name the specific deliverable
+- Meetings next week that need prep — say what prep is needed (agenda item, doc, question)
 - Anything with a deadline approaching that hasn't been addressed
 - Stuck projects (no active tasks defined)
 
@@ -149,12 +149,53 @@ them: flag the overdue review AND note that today's 1:1 is the window to close i
 with waiting-for items — if you're waiting on Gavrilo for something and there's a 1:1 with
 Gavrilo on Monday, note that on the radar card.
 
-Each radar card must include **source links** — small clickable chips that link back to the
-original Gmail thread, Calendar event, or Obsidian task.
+### Radar Card Content Rules
+
+**Every radar card must include the substance of what it's about.** A card that says
+"Ryan — waiting" is useless. The user needs to know *what* they're waiting on Ryan for
+without clicking through. Include the specific task, deliverable, or question.
+
+Bad example (too vague):
+```
+👀 WATCH — STALE 18 DAYS
+Ryan — waiting (longest)
+18 days with no update. Send a follow-up today.
+  [waiting]  ← links to itself
+```
+
+Good example (includes content and real links):
+```
+👀 WATCH — 12 DAYS OUTSTANDING
+WF Gavrilo — 2 blocked AWS/Iguazio items
+Waiting since Mar 14 on: (1) EC2 reserved instance savings $$ for AWS Optimization,
+(2) Iguazio AWS savings estimate for Erica. No Gavrilo meeting on calendar — nudge needed.
+  [📓 WF EC2]  [📓 WF Iguazio]  ← each links to the actual vault task
+```
+
+Rules:
+- **Title**: name the specific deliverable or topic, not just the person
+- **Description**: include what you're waiting for, what's due, what prep is needed, or
+  what action to take — the user should be able to act from the card alone
+- **Source chips must link to the original source** — the Gmail thread, Calendar event, or
+  Obsidian task file. Never link a chip back to the radar card itself. If there are multiple
+  source items (e.g., two waiting-for tasks for the same person), show a separate chip for
+  each with its own link.
 
 ### Building the Schedule
 
-Show a timeline for each day in the lookahead window. For each event:
+Show a timeline for each day in the lookahead window.
+
+**Time format — always show start AND end times:**
+- Timed events: `6:05–7:00 AM`, `10:00–10:30 AM`, `1:00–1:30 PM`
+- All-day events: `All Day`
+- Never show just a start time with no end time (e.g., "10:00 AM" alone is wrong)
+
+**Only show data from the calendar.** Do not fabricate event details, descriptions, or
+attendee information. If the calendar event has no description, show just the title and
+time. Vault task annotations (badges) are allowed because they come from a real source,
+but the event itself must match what the calendar API returned.
+
+For each event:
 
 - **Color-code by type**: meetings (accent blue), conflicts (orange), needs-RSVP (yellow),
   focus/admin blocks (green, dimmed), personal (teal), declined (gray, dimmed)
@@ -162,7 +203,8 @@ Show a timeline for each day in the lookahead window. For each event:
   note saying what they overlap with
 - **Flag unresolved RSVPs** — events where `myResponseStatus` is `needsAction`
 - **Annotate with context** — if a meeting connects to a vault task or an email thread,
-  add a badge (e.g., "⚠ IDEXX PO" on a Joyce 1:1 when there's an IDEXX chase email)
+  add a badge (e.g., "⚡ Iguazio sunset due Mar 31" on a Nemanja 1:1 when there's a
+  related vault task). These annotations must come from real vault/email data.
 - **Dim declined events** — show them but at reduced opacity so the user knows they exist
 
 If there are conflicts or pending RSVPs, add a yellow warning banner at the top of the
@@ -541,7 +583,10 @@ For Obsidian tasks, use: `obsidian://open?file=tasks%2FFILENAME` (URL-encode the
 ### Schedule Timeline
 
 Each day gets a vertical timeline with a thin line on the left and colored dots for each
-event. Use CSS classes to control the event color:
+event. The `.event-time` element must always show the full time range (`start–end`), e.g.,
+`7:00–7:30 AM` or `All Day`. Never show a bare start time without an end time.
+
+Use CSS classes to control the event color:
 
 - `.event` — default (accent blue border)
 - `.event.conflict` — orange border
