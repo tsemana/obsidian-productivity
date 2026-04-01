@@ -63,28 +63,24 @@ export async function accountSync(db, options = {}) {
     else {
         accounts = db.prepare("SELECT id, account_email FROM external_accounts").all();
     }
-    const results = [];
-    for (const account of accounts) {
-        try {
-            const result = await syncAccount(db, account.id, account.account_email, {
-                timeZone: options.timeZone,
-            });
-            results.push({
-                id: account.id,
-                email: account.account_email,
-                ...result,
-            });
-        }
-        catch (e) {
-            results.push({
-                id: account.id,
-                email: account.account_email,
-                calendar_events_synced: 0,
-                emails_synced: 0,
-                error: String(e),
-            });
-        }
-    }
+    const settled = await Promise.allSettled(accounts.map((account) => syncAccount(db, account.id, account.account_email, {
+        timeZone: options.timeZone,
+    }).then((result) => ({
+        id: account.id,
+        email: account.account_email,
+        ...result,
+    }))));
+    const results = settled.map((outcome, i) => {
+        if (outcome.status === "fulfilled")
+            return outcome.value;
+        return {
+            id: accounts[i].id,
+            email: accounts[i].account_email,
+            calendar_events_synced: 0,
+            emails_synced: 0,
+            error: String(outcome.reason),
+        };
+    });
     return { accounts: results };
 }
 /** account_list — list all registered Google accounts with status */

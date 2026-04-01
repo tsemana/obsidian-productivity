@@ -155,47 +155,49 @@ export async function radarData(db, vaultPath, options = {}) {
     WHERE path LIKE 'memory/projects/%' AND (status IS NULL OR status = 'active')
     ORDER BY title ASC
   `).all();
-    // Per-project next actions
-    const projectNextActions = [];
-    for (const proj of projectNotes) {
-        const slug = proj.path.replace(/^memory\/projects\//, "").replace(/\.md$/, "");
-        const topTask = db.prepare(`
-      SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-      WHERE tags LIKE '%"task"%' AND status = 'active'
-      AND (project = ? OR project LIKE ?)
-      AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-      ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
-      LIMIT 1
-    `).get(slug, `%${slug}%`);
-        projectNextActions.push({
+    // Batch: get top-priority task per project in a single query
+    // Build slug list from project notes
+    const projectSlugs = projectNotes.map((p) => p.path.replace(/^memory\/projects\//, "").replace(/\.md$/, ""));
+    // Fetch all active tasks that belong to any known project, ranked by priority
+    const allProjectTasks = db.prepare(`
+    SELECT path, title, priority, due, body_preview, frontmatter_json, project FROM notes
+    WHERE tags LIKE '%"task"%' AND status = 'active'
+    AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
+    AND project IS NOT NULL
+    ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
+  `).all();
+    // Index: for each slug, find the first (highest priority) matching task
+    const topTaskBySlug = new Map();
+    for (const task of allProjectTasks) {
+        for (const slug of projectSlugs) {
+            if (!topTaskBySlug.has(slug) && (task.project === slug || task.project.includes(slug))) {
+                topTaskBySlug.set(slug, task);
+            }
+        }
+    }
+    const projectNextActions = projectNotes.map((proj, i) => {
+        const slug = projectSlugs[i];
+        const topTask = topTaskBySlug.get(slug);
+        return {
             project_path: proj.path,
             project_title: proj.title,
             task_path: topTask?.path ?? null,
             task_title: topTask?.title ?? null,
             next_action: topTask ? extractNextAction(topTask.body_preview) : null,
-        });
-    }
+        };
+    });
     // Inbox count
     const inboxRow = db.prepare("SELECT COUNT(*) as cnt FROM notes WHERE path LIKE 'inbox/%'").get();
     const inboxCount = inboxRow.cnt;
-    // Stuck projects: active projects with zero active tasks
-    const stuckProjects = [];
-    for (const proj of projectNotes) {
-        const slug = proj.path.replace(/^memory\/projects\//, "").replace(/\.md$/, "");
-        const countRow = db.prepare(`
-      SELECT COUNT(*) as cnt FROM notes
-      WHERE tags LIKE '%"task"%' AND status = 'active'
-      AND (project = ? OR project LIKE ?)
-      AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    `).get(slug, `%${slug}%`);
-        if (countRow.cnt === 0) {
-            stuckProjects.push({
-                path: proj.path,
-                title: proj.title,
-                active_task_count: 0,
-            });
-        }
-    }
+    // Stuck projects: active projects with no matching active tasks
+    // Reuses allProjectTasks from the batch query above — no additional DB queries
+    const stuckProjects = projectNotes
+        .filter((_, i) => !topTaskBySlug.has(projectSlugs[i]))
+        .map((proj) => ({
+        path: proj.path,
+        title: proj.title,
+        active_task_count: 0,
+    }));
     // Calendar events
     const lookaheadEnd = new Date(new Date(date).getTime() + lookaheadDays * 86400000)
         .toISOString()
@@ -231,18 +233,8 @@ export async function radarData(db, vaultPath, options = {}) {
     }
     // Determine sources availability
     const vaultAvailable = true;
-    let calendarAvailable = false;
-    let emailAvailable = false;
-    try {
-        const calCount = db.prepare("SELECT COUNT(*) as cnt FROM calendar_events").get().cnt;
-        calendarAvailable = calCount > 0;
-    }
-    catch { }
-    try {
-        const emailCount = db.prepare("SELECT COUNT(*) as cnt FROM email_cache").get().cnt;
-        emailAvailable = emailCount > 0;
-    }
-    catch { }
+    const calendarAvailable = calendarEvents.length > 0;
+    const emailAvailable = emails.length > 0;
     return {
         date,
         vault: {
