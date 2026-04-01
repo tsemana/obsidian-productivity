@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
 const DB_FILENAME = ".vault-index.db";
@@ -8,6 +7,12 @@ let db = null;
 export function openDatabase(vaultPath) {
     if (db)
         return db;
+    // Dynamic import so the server starts even if better-sqlite3 native module
+    // can't load (e.g., Cowork VM with wrong Node version). When this throws,
+    // the caller in index.ts catches it and sets db = null, disabling
+    // SQLite-dependent tools while filesystem tools keep working.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require("better-sqlite3");
     const dbPath = join(vaultPath, DB_FILENAME);
     try {
         db = new Database(dbPath);

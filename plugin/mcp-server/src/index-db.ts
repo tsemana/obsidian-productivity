@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import type { Database as DatabaseType } from "better-sqlite3";
 import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
@@ -12,6 +11,13 @@ let db: DatabaseType | null = null;
 export function openDatabase(vaultPath: string): DatabaseType {
   if (db) return db;
 
+  // Dynamic import so the server starts even if better-sqlite3 native module
+  // can't load (e.g., Cowork VM with wrong Node version). When this throws,
+  // the caller in index.ts catches it and sets db = null, disabling
+  // SQLite-dependent tools while filesystem tools keep working.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = require("better-sqlite3");
+
   const dbPath = join(vaultPath, DB_FILENAME);
   try {
     db = new Database(dbPath);
@@ -21,11 +27,11 @@ export function openDatabase(vaultPath: string): DatabaseType {
     db = new Database(dbPath);
   }
 
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  db!.pragma("journal_mode = WAL");
+  db!.pragma("foreign_keys = ON");
 
-  runMigrations(db);
-  return db;
+  runMigrations(db!);
+  return db!;
 }
 
 /** Get the current database connection (must call openDatabase first) */
