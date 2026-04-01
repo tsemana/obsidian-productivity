@@ -15,14 +15,18 @@ import { baseRead, baseWrite, canvasRead, canvasWrite } from "./tools/bases-canv
 import { openDatabase, closeDatabase } from "./index-db.js";
 import { runSync, reindexFile } from "./sync.js";
 import { startSidecar, stopSidecar } from "./http-sidecar.js";
-import { accountRegister, accountSync } from "./tools/external.js";
+import { accountRegister, accountSync, accountList, accountRemove } from "./tools/external.js";
 import { radarGenerate, radarUpdateItem } from "./tools/radar.js";
+import { loadEnvSchema } from "./env.js";
 import { radarData, weeklyReview, projectOverview, quickCapture, searchAndSummarize } from "./tools/composite.js";
 
 const server = new McpServer({
   name: "obsidian-vault",
   version: "0.8.0",
 });
+
+// Load OAuth credentials from .env.schema (exec() directives → process.env)
+loadEnvSchema();
 
 // Resolve vault path once at startup
 const vaultPath = resolveVaultPath();
@@ -407,7 +411,7 @@ server.tool(
 
 server.tool(
   "account_register",
-  "Register a Google account for calendar and email syncing. Requires gcloud CLI authentication.",
+  "Register a Google account via OAuth2 browser flow for calendar and email syncing. Supports multiple accounts (work, personal, etc). Re-run on an existing account to re-authorize. OAuth credentials are auto-loaded from .env.schema on startup.",
   {
     id: z.string().describe("Short label for the account, e.g. 'work', 'personal'"),
     email: z.string().describe("Google account email address"),
@@ -421,7 +425,7 @@ server.tool(
 
 server.tool(
   "account_sync",
-  "Sync calendar events and email from registered Google accounts into the local cache.",
+  "Sync calendar events and emails from registered Google accounts into the local cache. Uses stored OAuth2 refresh tokens. Omit id to sync all accounts.",
   {
     id: z.string().optional().describe("Sync a specific account by id, or omit to sync all"),
     timeZone: z.string().optional().describe("IANA timezone, e.g. 'America/New_York'"),
@@ -430,6 +434,28 @@ server.tool(
     if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
     const result = await accountSync(db, params);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "account_list",
+  "List all registered Google accounts with their sync status and OAuth token state.",
+  {},
+  async () => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    return { content: [{ type: "text", text: JSON.stringify(accountList(db), null, 2) }] };
+  },
+);
+
+server.tool(
+  "account_remove",
+  "Remove a registered Google account and delete all its cached calendar events and emails.",
+  {
+    id: z.string().describe("Account id to remove, e.g. 'work' or 'personal'"),
+  },
+  async ({ id }) => {
+    if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
+    return { content: [{ type: "text", text: JSON.stringify(accountRemove(db, { id }), null, 2) }] };
   },
 );
 

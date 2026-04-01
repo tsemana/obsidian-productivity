@@ -51,7 +51,7 @@ export async function accountRegister(
     } catch (e) {
       return {
         error: "auth_failed",
-        message: `Cannot authenticate ${email}. Either configure OAuth (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET via Varlock) or run: gcloud auth login ${email}\n${e}`,
+        message: `Cannot authenticate ${email}. Either configure OAuth credentials in .env.schema (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET) or run: gcloud auth login ${email}\n${e}`,
       };
     }
     console.error(
@@ -134,4 +134,80 @@ export async function accountSync(
   }
 
   return { accounts: results };
+}
+
+/** account_list — list all registered Google accounts with status */
+export function accountList(
+  db: DatabaseType,
+): {
+  accounts: Array<{
+    id: string;
+    email: string;
+    context: string | null;
+    has_refresh_token: boolean;
+    last_synced_at: string | null;
+  }>;
+  total: number;
+} {
+  const rows = db
+    .prepare(
+      "SELECT id, account_email, context, refresh_token, last_synced_at FROM external_accounts",
+    )
+    .all() as Array<{
+    id: string;
+    account_email: string;
+    context: string | null;
+    refresh_token: string | null;
+    last_synced_at: number | null;
+  }>;
+
+  const accounts = rows.map((row) => ({
+    id: row.id,
+    email: row.account_email,
+    context: row.context,
+    has_refresh_token: row.refresh_token !== null,
+    last_synced_at: row.last_synced_at
+      ? new Date(row.last_synced_at).toISOString()
+      : null,
+  }));
+
+  return { accounts, total: accounts.length };
+}
+
+/** account_remove — remove an account and all its cached data */
+export function accountRemove(
+  db: DatabaseType,
+  options: { id: string },
+): { id: string; email: string; removed: { calendar_events: number; emails: number }; message: string } | { error: string; message: string } {
+  const { id } = options;
+
+  const account = db
+    .prepare("SELECT id, account_email FROM external_accounts WHERE id = ?")
+    .get(id) as { id: string; account_email: string } | undefined;
+
+  if (!account) {
+    return { error: "not_found", message: `Account "${id}" not found.` };
+  }
+
+  const calendarCount = (
+    db.prepare("SELECT COUNT(*) as count FROM calendar_events WHERE account_id = ?").get(id) as { count: number }
+  ).count;
+
+  const emailCount = (
+    db.prepare("SELECT COUNT(*) as count FROM email_cache WHERE account_id = ?").get(id) as { count: number }
+  ).count;
+
+  const remove = db.transaction(() => {
+    db.prepare("DELETE FROM calendar_events WHERE account_id = ?").run(id);
+    db.prepare("DELETE FROM email_cache WHERE account_id = ?").run(id);
+    db.prepare("DELETE FROM external_accounts WHERE id = ?").run(id);
+  });
+  remove();
+
+  return {
+    id,
+    email: account.account_email,
+    removed: { calendar_events: calendarCount, emails: emailCount },
+    message: `Account "${id}" (${account.account_email}) and all cached data removed.`,
+  };
 }

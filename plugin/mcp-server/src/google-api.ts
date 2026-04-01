@@ -48,7 +48,7 @@ export async function getAccessToken(
   } catch (e) {
     throw new Error(
       `Failed to get access token for ${account.account_email}. ` +
-      `Either configure OAuth (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET via Varlock) ` +
+      `Either configure OAuth credentials in .env.schema (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET) ` +
       `or run: gcloud auth login ${account.account_email}\n${e}`,
     );
   }
