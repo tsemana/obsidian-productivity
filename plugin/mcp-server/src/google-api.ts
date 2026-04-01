@@ -257,9 +257,13 @@ export async function syncAccount(
   const token = await getAccessToken(db, accountId);
   const now = Date.now();
 
-  // Sync calendar
-  const events = await fetchCalendarEvents(token, { timeZone: options.timeZone });
+  // Fetch calendar and email in parallel — independent APIs
+  const [events, emails] = await Promise.all([
+    fetchCalendarEvents(token, { timeZone: options.timeZone }),
+    fetchEmails(token, email),
+  ]);
 
+  // Upsert calendar events
   const upsertEvent = db.prepare(`
     INSERT INTO calendar_events (id, account_id, calendar_id, title, start_time, end_time,
       all_day, attendees, location, description, html_link, rsvp_status, synced_at)
@@ -284,12 +288,10 @@ export async function syncAccount(
         event.html_link, event.rsvp_status, now,
       );
     }
-    // Remove events that weren't in this sync (cancelled/removed)
     deleteStaleEvents.run(accountId, now);
   })();
 
-  // Sync email
-  const emails = await fetchEmails(token, email);
+  // Upsert emails
 
   const upsertEmail = db.prepare(`
     INSERT INTO email_cache (id, account_id, thread_id, subject, sender, date,
