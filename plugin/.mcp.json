@@ -2,8 +2,8 @@
   "mcpServers": {
     "obsidian-vault": {
       "type": "stdio",
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"]
+      "command": "bash",
+      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}/mcp-server\" && [ -d node_modules ] || npm install --no-fund --no-audit >&2 && node dist/index.js"]
     },
     "slack": {
       "type": "http",

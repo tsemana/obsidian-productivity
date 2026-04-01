@@ -1,9 +1,12 @@
 import type { Database as DatabaseType } from "better-sqlite3";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
 
+const require = createRequire(import.meta.url);
+
 const DB_FILENAME = ".vault-index.db";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 let db: DatabaseType | null = null;
 
@@ -11,11 +14,10 @@ let db: DatabaseType | null = null;
 export function openDatabase(vaultPath: string): DatabaseType {
   if (db) return db;
 
-  // Dynamic import so the server starts even if better-sqlite3 native module
+  // Dynamic require so the server starts even if better-sqlite3 native module
   // can't load (e.g., Cowork VM with wrong Node version). When this throws,
   // the caller in index.ts catches it and sets db = null, disabling
   // SQLite-dependent tools while filesystem tools keep working.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require("better-sqlite3");
 
   const dbPath = join(vaultPath, DB_FILENAME);
@@ -56,6 +58,9 @@ function runMigrations(db: DatabaseType): void {
   if (currentVersion < 2) {
     migrateV2(db);
   }
+  if (currentVersion < 3) {
+    migrateV3(db);
+  }
 
   db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
@@ -81,10 +86,9 @@ function migrateV1(db: DatabaseType): void {
       frontmatter_json TEXT
     );
 
-    -- Full-text search (external content mode)
+    -- Full-text search
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
       title, body,
-      content='',
       tokenize='porter unicode61'
     );
 
@@ -161,7 +165,20 @@ function migrateV1(db: DatabaseType): void {
 }
 
 function migrateV2(db: DatabaseType): void {
+  const cols = db.pragma("table_info(external_accounts)") as { name: string }[];
+  if (!cols.some((c) => c.name === "refresh_token")) {
+    db.exec(`ALTER TABLE external_accounts ADD COLUMN refresh_token TEXT;`);
+  }
+}
+
+function migrateV3(db: DatabaseType): void {
+  // Rebuild FTS5 table: switch from contentless (content='') to content-storing
+  // so that DELETE FROM works. Existing data will be re-indexed by runSync.
+  db.exec(`DROP TABLE IF EXISTS notes_fts`);
   db.exec(`
-    ALTER TABLE external_accounts ADD COLUMN refresh_token TEXT;
+    CREATE VIRTUAL TABLE notes_fts USING fts5(
+      title, body,
+      tokenize='porter unicode61'
+    );
   `);
 }
