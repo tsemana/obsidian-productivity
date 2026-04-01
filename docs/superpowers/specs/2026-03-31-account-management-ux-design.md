@@ -73,7 +73,7 @@ Removes an account and all its cached data.
 
 **Current:** `"Register a Google account for calendar and email syncing. Requires gcloud CLI authentication."`
 
-**New:** `"Register a Google account via OAuth2 browser flow for calendar and email syncing. Supports multiple accounts (work, personal, etc). Re-run on an existing account to re-authorize. Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET via Varlock."`
+**New:** `"Register a Google account via OAuth2 browser flow for calendar and email syncing. Supports multiple accounts (work, personal, etc). Re-run on an existing account to re-authorize. OAuth credentials are auto-loaded from .env.schema on startup."`
 
 ### 2.2 `account_sync`
 
@@ -96,10 +96,11 @@ Brief checklist for first-time setup:
 1. Create a Google Cloud project with OAuth consent screen (Desktop app type)
 2. Enable Calendar API and Gmail API
 3. Create OAuth 2.0 Client ID (Desktop application)
-4. Store `client-id` and `client-secret` in 1Password at `op://LifeOS/google-oauth/`
-5. Verify Varlock resolves: `cd plugin/mcp-server && varlock load`
+4. Store `client-id` and `client-secret` in 1Password
+5. Configure `.env.schema` in `plugin/mcp-server/` with the correct `op://` paths for your 1Password vault
+6. Store a 1Password Service Account token in macOS Keychain (the `.env.schema` retrieves it via `security find-generic-password`)
 
-Note: The `.env.schema` in the MCP server defines the 1Password references. Users with different 1Password vault names need to edit the `op://` paths.
+Note: The `.env.schema` is the source of truth for how OAuth credentials are resolved. The MCP server loads these at startup using `execSync` — no Varlock wrapper needed. Users with different 1Password vault/item names edit the `op://` paths and Keychain references in `.env.schema`.
 
 ### Important Distinction Section
 Clarify that:
@@ -130,7 +131,7 @@ When to re-authorize:
 ### Troubleshooting Section
 Common issues:
 - **"No refresh token received"** → Account was previously authorized without revoking. Go to https://myaccount.google.com/permissions, remove the app, try again
-- **"OAuth not configured"** → `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` not in environment. Check Varlock: `varlock load` in `plugin/mcp-server/`
+- **"OAuth not configured"** → `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` not in environment. Check `.env.schema` in `plugin/mcp-server/` — verify the `op://` paths and Keychain entry are correct
 - **"OAuth authorization timed out"** → Browser flow wasn't completed within 120 seconds. Run `account_register` again
 - **Calendar events missing** → Check that Calendar API is enabled in the Google Cloud project
 - **Gmail empty** → Check that Gmail API is enabled; default query is `is:unread (is:important OR is:starred)`
@@ -157,18 +158,41 @@ The command references the `account-setup` skill for detailed workflows.
 
 ---
 
-## 5. File Changes Summary
+## 5. Credential Loading: Drop Varlock Runtime, Keep `.env.schema`
+
+**Current state:** Varlock is a dependency in `package.json` but the npm scripts don't use `varlock run --`. The `.env.schema` uses `exec()` directives that call macOS Keychain + 1Password CLI directly.
+
+**Change:** The MCP server will load credentials from `.env.schema` at startup by parsing the `exec()` directives and running them via `execSync`. This means:
+- `.env.schema` remains the single source of truth for credential configuration
+- No `varlock` wrapper needed at launch — any MCP client can start the server directly
+- Remove `varlock` and `@varlock/1password-plugin` from `package.json` dependencies
+- Remove Varlock references from error messages in `google-api.ts` and `external.ts`
+
+**Implementation:** Add a `loadEnvSchema()` function in a new `src/env.ts` module (or in `index.ts` at startup) that:
+1. Reads `.env.schema` from the MCP server directory
+2. Parses lines matching `KEY=exec(\`...\`)` pattern
+3. Runs each command via `execSync`, captures output
+4. Sets `process.env[KEY]` with the result
+5. Silently skips on failure (credentials become optional — gcloud fallback still works)
+
+Called once at server startup before tool registration.
+
+---
+
+## 6. File Changes Summary
 
 | File | Action | Description |
 |------|--------|-------------|
 | `plugin/mcp-server/src/tools/external.ts` | Modify | Add `accountList()` and `accountRemove()` functions |
-| `plugin/mcp-server/src/index.ts` | Modify | Register `account_list` and `account_remove` tools; update descriptions for `account_register` and `account_sync` |
+| `plugin/mcp-server/src/index.ts` | Modify | Register `account_list` and `account_remove` tools; update descriptions for `account_register` and `account_sync`; call `loadEnvSchema()` at startup |
+| `plugin/mcp-server/src/env.ts` | Create | `.env.schema` parser — loads `exec()` directives into `process.env` at startup |
+| `plugin/mcp-server/package.json` | Modify | Remove `varlock` dependency |
 | `plugin/skills/account-setup/SKILL.md` | Create | Skill teaching Claude the multi-account OAuth workflow |
 | `plugin/commands/accounts.md` | Create | `/accounts` command for user-facing account management |
 
 ---
 
-## 6. Non-Goals
+## 7. Non-Goals
 
 - **Scope changes:** Not adding write access to Calendar or Gmail — read-only stays.
 - **Auto-discovery:** Not auto-detecting which Google accounts the user has — they explicitly register each one.
