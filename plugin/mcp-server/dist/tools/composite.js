@@ -231,10 +231,22 @@ export async function radarData(db, vaultPath, options = {}) {
         }
         catch { }
     }
-    // Determine sources availability
+    // Determine sources availability (whether data exists in DB, regardless of include flags)
     const vaultAvailable = true;
-    const calendarAvailable = calendarEvents.length > 0;
-    const emailAvailable = emails.length > 0;
+    let calendarAvailable = calendarEvents.length > 0;
+    let emailAvailable = emails.length > 0;
+    if (!calendarAvailable && !includeCalendar) {
+        try {
+            calendarAvailable = db.prepare("SELECT COUNT(*) as cnt FROM calendar_events").get().cnt > 0;
+        }
+        catch { }
+    }
+    if (!emailAvailable && !includeEmail) {
+        try {
+            emailAvailable = db.prepare("SELECT COUNT(*) as cnt FROM email_cache").get().cnt > 0;
+        }
+        catch { }
+    }
     return {
         date,
         vault: {

@@ -4,6 +4,10 @@ import { parseNote, mergeFrontmatter, replaceSection } from "../frontmatter.js";
 import { noteWrite, noteMove, noteRead } from "./notes.js";
 import { vaultList } from "./vault-management.js";
 import { reindexFile } from "../sync.js";
+// Note: creates ESM cycle (tasks → radar → composite → tasks). Safe because
+// radarUpdateItem is only called at function-invocation time, never during
+// module initialization. If this cycle becomes problematic, extract
+// radarUpdateItem into a standalone radar-update.ts leaf module.
 import { radarUpdateItem } from "./radar.js";
 function slugify(title) {
     return title
