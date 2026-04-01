@@ -26,4 +26,30 @@ export declare function accountSync(db: DatabaseType, options?: {
         error?: string;
     }>;
 }>;
+/** account_list — list all registered Google accounts with status */
+export declare function accountList(db: DatabaseType): {
+    accounts: Array<{
+        id: string;
+        email: string;
+        context: string | null;
+        has_refresh_token: boolean;
+        last_synced_at: string | null;
+    }>;
+    total: number;
+};
+/** account_remove — remove an account and all its cached data */
+export declare function accountRemove(db: DatabaseType, options: {
+    id: string;
+}): {
+    id: string;
+    email: string;
+    removed: {
+        calendar_events: number;
+        emails: number;
+    };
+    message: string;
+} | {
+    error: string;
+    message: string;
+};
 //# sourceMappingURL=external.d.ts.map
