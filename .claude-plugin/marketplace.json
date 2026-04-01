@@ -13,7 +13,7 @@
       "name": "obsidian-productivity",
       "source": "./plugin",
       "description": "Obsidian-native productivity system: task management, workplace memory, and Obsidian-flavored markdown skills. Includes an MCP server for vault operations.",
-      "version": "0.12.0",
+      "version": "0.12.1",
       "author": {
         "name": "Tony Semana"
       },
