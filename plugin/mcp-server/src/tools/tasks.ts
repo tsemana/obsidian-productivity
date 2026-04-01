@@ -5,6 +5,7 @@ import { noteWrite, noteMove, noteRead } from "./notes.js";
 import { vaultList } from "./vault-management.js";
 import { reindexFile } from "../sync.js";
 import type { Database as DatabaseType } from "better-sqlite3";
+import { radarUpdateItem } from "./radar.js";
 
 function slugify(title: string): string {
   return title
@@ -120,12 +121,12 @@ export function taskUpdate(
   return { path, frontmatter: fm };
 }
 
-/** task_complete — mark task done and move to tasks/done/ */
+/** task_complete — mark task done, move to tasks/done/, and update today's radar */
 export function taskComplete(
   vaultPath: string,
   path: string,
   db?: DatabaseType,
-): { old_path: string; new_path: string; completed: string } | { error: string; message: string } {
+): { old_path: string; new_path: string; completed: string; radar_updated: boolean } | { error: string; message: string } {
   const completed = todayStr();
 
   // Update frontmatter first
@@ -146,7 +147,14 @@ export function taskComplete(
     reindexFile(db, vaultPath, newPath); // indexes new location
   }
 
-  return { old_path: path, new_path: newPath, completed };
+  // Auto-update today's radar HTML if it exists
+  let radar_updated = false;
+  const radarResult = radarUpdateItem(vaultPath, { path, state: "resolved" });
+  if (!("error" in radarResult)) {
+    radar_updated = radarResult.updated;
+  }
+
+  return { old_path: path, new_path: newPath, completed, radar_updated };
 }
 
 /** task_list — dispatcher: use SQLite index if available, fall back to file scan */
