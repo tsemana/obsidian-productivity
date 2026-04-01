@@ -14,8 +14,7 @@
     "better-sqlite3": "^12.8.0",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.0",
-    "open": "^11.0.0",
-    "varlock": "^0.6.4"
+    "open": "^11.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
