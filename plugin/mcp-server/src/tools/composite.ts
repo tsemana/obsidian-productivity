@@ -392,7 +392,10 @@ export async function radarData(
   let calendarEvents: EventRow[] = [];
   if (includeCalendar) {
     calendarEvents = db.prepare(`
-      SELECT ce.*, ea.account_email, ea.context
+      SELECT ce.id, ce.account_id, ce.calendar_id, ce.title,
+        ce.start_time, ce.end_time, ce.all_day, ce.attendees,
+        ce.location, ce.html_link, ce.rsvp_status,
+        ea.account_email, ea.context
       FROM calendar_events ce
       JOIN external_accounts ea ON ce.account_id = ea.id
       WHERE ce.start_time >= ? AND ce.start_time <= ?

@@ -7,7 +7,9 @@ export interface TaskRow {
     body_preview: string | null;
     frontmatter_json: string | null;
 }
-/** Row shape for calendar events joined with external_accounts */
+/** Row shape for calendar events joined with external_accounts.
+ *  `description` is intentionally excluded — it bloats radar_data responses
+ *  (36K+ across 130 events) and is not used by any renderer. */
 export interface EventRow {
     id: string;
     account_id: string;
@@ -18,7 +20,6 @@ export interface EventRow {
     all_day: number;
     attendees: string | null;
     location: string | null;
-    description: string | null;
     html_link: string | null;
     rsvp_status: string | null;
     account_email: string;
