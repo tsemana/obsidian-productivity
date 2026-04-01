@@ -34,11 +34,12 @@ export declare function taskUpdate(vaultPath: string, path: string, options: {
     path: string;
     message: string;
 };
-/** task_complete — mark task done and move to tasks/done/ */
+/** task_complete — mark task done, move to tasks/done/, and update today's radar */
 export declare function taskComplete(vaultPath: string, path: string, db?: DatabaseType): {
     old_path: string;
     new_path: string;
     completed: string;
+    radar_updated: boolean;
 } | {
     error: string;
     message: string;

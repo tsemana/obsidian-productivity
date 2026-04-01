@@ -104,34 +104,28 @@ export async function accountSync(
     accounts = db.prepare("SELECT id, account_email FROM external_accounts").all() as typeof accounts;
   }
 
-  const results: Array<{
-    id: string;
-    email: string;
-    calendar_events_synced: number;
-    emails_synced: number;
-    error?: string;
-  }> = [];
-
-  for (const account of accounts) {
-    try {
-      const result = await syncAccount(db, account.id, account.account_email, {
+  const settled = await Promise.allSettled(
+    accounts.map((account) =>
+      syncAccount(db, account.id, account.account_email, {
         timeZone: options.timeZone,
-      });
-      results.push({
+      }).then((result) => ({
         id: account.id,
         email: account.account_email,
         ...result,
-      });
-    } catch (e) {
-      results.push({
-        id: account.id,
-        email: account.account_email,
-        calendar_events_synced: 0,
-        emails_synced: 0,
-        error: String(e),
-      });
-    }
-  }
+      })),
+    ),
+  );
+
+  const results = settled.map((outcome, i) => {
+    if (outcome.status === "fulfilled") return outcome.value;
+    return {
+      id: accounts[i].id,
+      email: accounts[i].account_email,
+      calendar_events_synced: 0,
+      emails_synced: 0,
+      error: String(outcome.reason),
+    };
+  });
 
   return { accounts: results };
 }

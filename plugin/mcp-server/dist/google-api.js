@@ -149,8 +149,12 @@ export async function fetchEmails(token, accountEmail, options = {}) {
 export async function syncAccount(db, accountId, email, options = {}) {
     const token = await getAccessToken(db, accountId);
     const now = Date.now();
-    // Sync calendar
-    const events = await fetchCalendarEvents(token, { timeZone: options.timeZone });
+    // Fetch calendar and email in parallel — independent APIs
+    const [events, emails] = await Promise.all([
+        fetchCalendarEvents(token, { timeZone: options.timeZone }),
+        fetchEmails(token, email),
+    ]);
+    // Upsert calendar events
     const upsertEvent = db.prepare(`
     INSERT INTO calendar_events (id, account_id, calendar_id, title, start_time, end_time,
       all_day, attendees, location, description, html_link, rsvp_status, synced_at)
@@ -166,11 +170,9 @@ export async function syncAccount(db, accountId, email, options = {}) {
         for (const event of events) {
             upsertEvent.run(event.id, accountId, event.calendar_id, event.title, event.start_time, event.end_time, event.all_day ? 1 : 0, JSON.stringify(event.attendees), event.location, event.description, event.html_link, event.rsvp_status, now);
         }
-        // Remove events that weren't in this sync (cancelled/removed)
         deleteStaleEvents.run(accountId, now);
     })();
-    // Sync email
-    const emails = await fetchEmails(token, email);
+    // Upsert emails
     const upsertEmail = db.prepare(`
     INSERT INTO email_cache (id, account_id, thread_id, subject, sender, date,
       labels, snippet, is_starred, is_important, html_link, synced_at)
