@@ -30,62 +30,49 @@ scannable format with direct links back to every source so the user can act imme
 
 ## 1. Data Collection
 
-Gather data from whichever sources are available. The skill degrades gracefully — if a
-source isn't connected, skip it and note what's missing in the output.
+**CRITICAL: NEVER use Claude.ai's `gcal_*` or `gmail_*` MCP connector tools for the
+radar.** Those connectors only have access to a single Google account. The plugin's own
+MCP tools pull from ALL registered Google accounts (personal, work, etc.) via the vault's
+SQLite database. Always use the plugin tools described below.
 
-### Preferred Path: radar_data Composite Tool
+### Path A — radar_generate (Preferred)
 
-If the `radar_data` MCP tool is available (v0.8.0+ vaults with SQLite), call it once:
+If the `radar_generate` MCP tool is available, call it:
+
+```
+radar_generate({ })
+```
+
+This is the fastest path. It syncs all accounts, gathers all data (tasks, calendar, email),
+renders the full HTML radar, writes the file, and creates a daily note — all server-side.
+You do NOT need to render HTML yourself. Just present the verbal summary after it returns.
+
+### Path B — radar_data (Data Only)
+
+If `radar_generate` is not available but `radar_data` is (v0.8.0+ vaults with SQLite):
 
 ```
 radar_data({ lookahead_days: 3 })
 ```
 
-This returns all data in a single call: tasks (overdue/active/waiting with `next_action`), per-project next actions, inbox count, stuck projects, calendar events, email highlights, and CLAUDE.md context.
+This returns all data in a single call: tasks (overdue/active/waiting with `next_action`),
+per-project next actions, inbox count, stuck projects, calendar events from ALL accounts,
+email highlights from ALL accounts, and CLAUDE.md context.
 
-Use this data for all sections below. **Skip the individual data collection steps** (Google Calendar, Gmail, Obsidian vault) when `radar_data` is available.
+Use this data for all sections below and render the HTML yourself.
 
-If `radar_data` is not available, fall back to the individual MCP tool calls described below.
+### Path C — Individual Vault MCP Tools (Fallback)
 
-### Google Calendar
+If neither composite tool is available, use the plugin's individual vault MCP tools:
 
-Use `gcal_list_events` to fetch events covering **today plus the next 3 business days**.
-If a weekend falls inside that window, include the weekend days too (some people have
-weekend events). Use the user's stated timezone (default to America/New_York if not
-specified).
+1. **`claudemd_read`** — get the user's working memory (org chart, projects, terminology)
+2. **`task_list`** — pull all tasks grouped by status
+3. **`account_sync`** — trigger a sync of all registered Google accounts
+4. Then query tasks, calendar, and email data from the vault's SQLite index
 
-For each event, capture: summary, start/end times, your RSVP status (`accepted`,
-`declined`, `needsAction`, `tentative`), attendee count, and the `htmlLink` for linking.
-
-**Important:** Pass `timeZone` to the calendar API so times come back in the user's local
-zone. Don't do manual UTC conversion — let the API handle it.
-
-### Gmail
-
-Use `gmail_search_messages` with query `is:unread (is:important OR is:starred)` and a
-reasonable limit (15-25 messages). For each message, use `gmail_read_message` to capture:
-subject, from, date, snippet, labels, messageId, and threadId.
-
-Filter out noise during synthesis (newsletters, promotions, automated digests) — these
-shouldn't become radar items unless they're genuinely actionable. Focus on:
-
-- Direct emails from colleagues that need a response or action
-- Approval/workflow notifications (Oracle, Workday, Concur, etc.)
-- Shared documents that need your input
-- Follow-up/chase emails (someone asking you again)
-
-### Obsidian Vault
-
-If the Obsidian vault MCP tools are available:
-
-1. **Read CLAUDE.md** — use `claudemd_read` to get the user's working memory. It contains
-   their org chart, projects, terminology, and preferences. Use it to understand who people
-   are and what shorthand means.
-2. **Read the task list** — use `task_list` to pull all tasks. Group them by status:
-   `active`, `waiting`, `done`, `someday`.
-
-If no vault MCP is connected, skip this section. The radar still works with just
-Calendar + Gmail.
+**Do NOT fall back to Claude.ai's `gcal_list_events`, `gmail_search_messages`, or any
+`gcal_*`/`gmail_*` connector tools.** If the plugin MCP tools are unavailable, report
+which sources are missing rather than substituting single-account connectors.
 
 ---
 
@@ -611,9 +598,12 @@ Small inline pills for status indicators:
 
 ## 4. File Output
 
-Save the file as `radar-YYYY-MM-DD.html` in the current working directory.
+If you used `radar_generate` (Path A), the HTML file and daily note are already written
+by the server. Skip to the verbal summary.
 
-After writing the file, give a brief verbal summary (3-5 bullets) of the most important
+Otherwise, save the file as `radar-YYYY-MM-DD.html` in the current working directory.
+
+After the file is ready, give a brief verbal summary (3-5 bullets) of the most important
 things on their radar — the fires and anything they should act on immediately. Keep it
 concise; the HTML has all the detail.
 
@@ -633,3 +623,7 @@ If a source isn't available:
   detection and RSVP flags is useful.
 
 Add a small note at the bottom listing which sources were used.
+
+**Reminder:** Never substitute Claude.ai's `gcal_*`/`gmail_*` connectors for missing
+plugin tools. Those connectors only see one Google account and will produce an incomplete
+radar. Report the gap instead.

@@ -3,7 +3,7 @@
     "obsidian-vault": {
       "type": "stdio",
       "command": "bash",
-      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}/mcp-server\" && [ -d node_modules ] || npm install --no-fund --no-audit >&2 && node dist/index.js"]
+      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}/mcp-server\" && { [ -f node_modules/.package-lock.json ] || npm install --no-fund --no-audit >&2; } && node dist/index.js"]
     },
     "slack": {
       "type": "http",
