@@ -15,18 +15,31 @@ export function openDatabase(vaultPath) {
     // SQLite-dependent tools while filesystem tools keep working.
     const Database = require("better-sqlite3");
     const dbPath = join(vaultPath, DB_FILENAME);
+    let conn;
     try {
-        db = new Database(dbPath);
+        conn = new Database(dbPath);
+        conn.pragma("journal_mode = WAL");
+        conn.pragma("foreign_keys = ON");
+        runMigrations(conn);
     }
     catch {
-        // Corrupt DB — delete and retry
+        // Corrupt DB — delete and retry from scratch
         if (existsSync(dbPath))
             unlinkSync(dbPath);
-        db = new Database(dbPath);
+        try {
+            unlinkSync(dbPath + "-shm");
+        }
+        catch { /* ignore */ }
+        try {
+            unlinkSync(dbPath + "-wal");
+        }
+        catch { /* ignore */ }
+        conn = new Database(dbPath);
+        conn.pragma("journal_mode = WAL");
+        conn.pragma("foreign_keys = ON");
+        runMigrations(conn);
     }
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
-    runMigrations(db);
+    db = conn;
     return db;
 }
 /** Get the current database connection (must call openDatabase first) */
