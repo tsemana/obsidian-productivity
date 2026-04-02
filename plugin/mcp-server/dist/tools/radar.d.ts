@@ -16,11 +16,14 @@ export declare function radarGenerate(db: DatabaseType, vaultPath: string, optio
 }>;
 /** radar_update_item — modify a single item's visual state in the radar HTML */
 export declare function radarUpdateItem(vaultPath: string, options: {
-    path: string;
+    path?: string;
+    email_id?: string;
     state: "resolved" | "active";
     date?: string;
+    explanation?: string;
 }): {
-    path: string;
+    path?: string;
+    email_id?: string;
     state: string;
     updated: boolean;
 } | {

@@ -627,18 +627,42 @@ today's radar file didn't exist — no action needed.
 
 ### Manual — when not using task_complete
 
-If you resolve an item through other means (e.g., manually updating frontmatter, or
-resolving a non-task item like an email or calendar action), call `radar_update_item`
-explicitly:
+If you resolve a task through other means (e.g., manually updating frontmatter), call
+`radar_update_item` explicitly:
 
 ```
-radar_update_item({ path: "tasks/the-task-filename.md", state: "resolved" })
+radar_update_item({ path: "tasks/the-task-filename.md", state: "resolved", explanation: "Brief note on what was done" })
 ```
 
 The `path` must match the `data-task-path` attribute in the radar HTML — this is the
 task's original path at the time the radar was generated (before any move to `tasks/done/`).
 
 To un-resolve an item (e.g., if marked done by mistake), call with `state: "active"`.
+
+### Email items — mark as addressed
+
+When the user says an email radar item is "addressed", "handled", "done", or "taken care
+of", follow this exact flow:
+
+1. **Create a task** from the email using `task_create`:
+   - Title: short description of what was done (e.g., "Replied to budget request from Ryan")
+   - Priority: same as the email's radar tier (fire → high, watch → medium, fyi → low)
+   - Status: `done` (create it already completed)
+   - Add `completed: YYYY-MM-DD` (today) in frontmatter
+   - Body: include the email subject, sender, and a brief note on what action was taken
+
+2. **Immediately complete** the task using `task_complete` with the new task's path.
+   This moves it to `tasks/done/` and sets the completed date.
+
+3. **Strike out the email in the radar** using `radar_update_item` with the email's ID:
+   ```
+   radar_update_item({ email_id: "MESSAGE_ID", state: "resolved", explanation: "Replied with budget figures" })
+   ```
+   The `email_id` matches the `data-email-id` attribute on the email's radar card.
+
+The `explanation` parameter is optional but recommended — it adds a green italic sub-line
+to the resolved radar card showing what was done, so the user can see at a glance how each
+item was handled without clicking through.
 
 ---
 

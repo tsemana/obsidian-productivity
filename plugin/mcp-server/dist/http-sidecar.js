@@ -30,15 +30,15 @@ export function startSidecar(vaultPath, handlers) {
                 }
                 if (req.method === "POST" && req.url === "/radar/item") {
                     const body = await readBody(req);
-                    const { path, state } = JSON.parse(body);
-                    if (!path || !state) {
+                    const { path, state, email_id } = JSON.parse(body);
+                    if ((!path && !email_id) || !state) {
                         res.writeHead(400, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({ error: "Missing path or state" }));
+                        res.end(JSON.stringify({ error: "Missing path/email_id or state" }));
                         return;
                     }
-                    handlers.onRadarItemUpdate(path, state);
+                    handlers.onRadarItemUpdate(path, state, email_id);
                     res.writeHead(200, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ status: "updated", path, state }));
+                    res.end(JSON.stringify({ status: "updated", path, email_id, state }));
                     return;
                 }
                 res.writeHead(404, { "Content-Type": "application/json" });

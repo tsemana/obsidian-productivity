@@ -160,14 +160,22 @@ export function radarUpdateItem(vaultPath, options) {
         return { error: "file_not_found", message: `No radar file found for ${date}` };
     }
     let html = readFileSync(radarFile, "utf-8");
-    const dataAttr = `data-task-path="${options.path}"`;
-    if (!html.includes(dataAttr)) {
-        return { error: "item_not_found", message: `No item with path "${options.path}" in radar` };
+    // Build the data attribute to search for — supports task paths and email IDs
+    const dataAttr = options.path
+        ? `data-task-path="${options.path}"`
+        : options.email_id
+            ? `data-email-id="${options.email_id}"`
+            : null;
+    if (!dataAttr) {
+        return { error: "missing_identifier", message: "Provide either path (for tasks) or email_id (for emails)" };
     }
+    if (!html.includes(dataAttr)) {
+        return { error: "item_not_found", message: `No item with ${dataAttr} in radar` };
+    }
+    const escapedAttr = dataAttr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (options.state === "resolved") {
-        // Find elements with this data-task-path and add resolved class + opacity
-        // Match the opening tag containing the data attribute
-        html = html.replace(new RegExp(`(<(?:div|li)[^>]*${dataAttr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>)`, "g"), (match) => {
+        // Find elements with this data attribute and add resolved class + opacity
+        html = html.replace(new RegExp(`(<(?:div|li)[^>]*${escapedAttr}[^>]*>)`, "g"), (match) => {
             let tag = match;
             // Add resolved class
             if (tag.includes('class="')) {
@@ -185,10 +193,16 @@ export function radarUpdateItem(vaultPath, options) {
             }
             return tag;
         });
+        // If an explanation was provided, append it as a sub-line after the matched element's closing children
+        if (options.explanation) {
+            html = html.replace(new RegExp(`(<(?:div|li)[^>]*${escapedAttr}[^>]*>[\\s\\S]*?)(</(?:div|li)>)`, ""), (match, before, closingTag) => {
+                return `${before}      <div class="radar-sub" style="color: var(--green); font-style: italic; margin-top: 4px;">✓ ${escapeHtml(options.explanation)}</div>\n    ${closingTag}`;
+            });
+        }
     }
     else {
-        // Remove resolved class and opacity from elements with this data-task-path
-        html = html.replace(new RegExp(`(<(?:div|li)[^>]*${dataAttr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^>]*>)`, "g"), (match) => {
+        // Remove resolved class and opacity from elements with this data attribute
+        html = html.replace(new RegExp(`(<(?:div|li)[^>]*${escapedAttr}[^>]*>)`, "g"), (match) => {
             let tag = match;
             tag = tag.replace(/ resolved/g, "");
             tag = tag.replace(/ opacity: 0\.4;/g, "");
@@ -199,7 +213,7 @@ export function radarUpdateItem(vaultPath, options) {
         });
     }
     writeFileSync(radarFile, html, "utf-8");
-    return { path: options.path, state: options.state, updated: true };
+    return { path: options.path, email_id: options.email_id, state: options.state, updated: true };
 }
 // ─── HTML Renderer ────────────────────────────────────────────────────────
 function renderRadarHtml(data) {
@@ -304,7 +318,10 @@ a.src:hover { opacity: 1; color: var(--accent2); border-color: var(--accent2); }
 .p-muted { background: var(--muted); }
 .legend { display: flex; gap: 20px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 4px; align-items: center; }
 .legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
-.resolved { text-decoration: line-through; opacity: 0.4; }
+.resolved { opacity: 0.4; }
+.resolved .radar-title, .resolved .radar-sub, .resolved .radar-label,
+.resolved .loop-title, .resolved .loop-sub,
+.resolved .event-title, .resolved .event-time, .resolved .event-meta { text-decoration: line-through; }
 .sync-btn { position: fixed; top: 16px; right: 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; color: var(--text2); cursor: pointer; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; transition: all 0.15s; z-index: 100; }
 .sync-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 .sync-btn.syncing { opacity: 0.6; pointer-events: none; }
@@ -419,7 +436,11 @@ async function resync() {
 </html>`;
 }
 function radarItemHtml(item, tier) {
-    const dataAttr = item.taskPath ? ` data-task-path="${escapeHtml(item.taskPath)}"` : "";
+    const dataAttr = item.taskPath
+        ? ` data-task-path="${escapeHtml(item.taskPath)}"`
+        : item.emailId
+            ? ` data-email-id="${escapeHtml(item.emailId)}"`
+            : "";
     return `    <div class="radar-item ${tier}"${dataAttr}>
       <div class="radar-label">${item.label}</div>
       <div class="radar-title">${escapeHtml(item.title)}</div>
@@ -490,6 +511,7 @@ function buildFireItems(overdue, emails, active, date) {
             title: email.subject ?? "(No subject)",
             sub: `From: ${email.sender ?? "unknown"}`,
             sources: email.html_link ? `<a class="src" href="${escapeHtml(email.html_link)}" target="_blank">\uD83D\uDCE7 Gmail</a>` : "",
+            emailId: email.id,
         });
     }
     return items;
@@ -542,6 +564,7 @@ function buildFyiItems(emails) {
         title: email.subject ?? "(No subject)",
         sub: `From: ${email.sender ?? "unknown"}`,
         sources: email.html_link ? `<a class="src" href="${escapeHtml(email.html_link)}" target="_blank">\uD83D\uDCE7 Gmail</a>` : "",
+        emailId: email.id,
     }));
 }
 function groupEventsByDay(events) {

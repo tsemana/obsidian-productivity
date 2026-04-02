@@ -54,8 +54,8 @@ if (vaultPath) {
           await radarGenerate(db, vaultPath, { sidecarPort });
         }
       },
-      onRadarItemUpdate: (path, state) => {
-        radarUpdateItem(vaultPath, { path, state });
+      onRadarItemUpdate: (path, state, email_id) => {
+        radarUpdateItem(vaultPath, { path, state, email_id });
       },
     });
     console.error(`HTTP sidecar listening on port ${sidecarPort}`);
@@ -476,14 +476,16 @@ server.tool(
 
 server.tool(
   "radar_update_item",
-  "Update a single item's visual state in today's radar HTML (strikethrough for resolved, restore for active).",
+  "Update a single item's visual state in today's radar HTML (strikethrough for resolved, restore for active). Use 'path' for task items or 'email_id' for email items. Optionally include an explanation that appears as a green sub-line on resolved items.",
   {
-    path: z.string().describe("Vault-relative path to the task, e.g. 'tasks/review-budget.md'"),
+    path: z.string().optional().describe("Vault-relative path to the task, e.g. 'tasks/review-budget.md'"),
+    email_id: z.string().optional().describe("Email message ID for email radar items"),
     state: z.enum(["resolved", "active"]).describe("Visual state to apply"),
     date: z.string().optional().describe("Radar date (default: today)"),
+    explanation: z.string().optional().describe("Brief explanation shown on resolved items, e.g. 'Replied with budget figures'"),
   },
-  async ({ path, state, date }) => ({
-    content: [{ type: "text", text: JSON.stringify(radarUpdateItem(requireVault(), { path, state, date }), null, 2) }],
+  async ({ path, email_id, state, date, explanation }) => ({
+    content: [{ type: "text", text: JSON.stringify(radarUpdateItem(requireVault(), { path, email_id, state, date, explanation }), null, 2) }],
   }),
 );
 
