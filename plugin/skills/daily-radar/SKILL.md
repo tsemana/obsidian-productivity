@@ -611,7 +611,38 @@ concise; the HTML has all the detail.
 
 ---
 
-## 5. Handling Missing Sources
+## 5. Live Updates After Generation
+
+Once the radar HTML is generated, items can be resolved in-place without regenerating the
+entire file. The `radar_update_item` MCP tool modifies a single item's visual state by
+adding `class="resolved"` (strikethrough + dimmed opacity) to both the radar strip card
+and the open loops entry.
+
+### Automatic — via task_complete
+
+When a task is completed using the `task_complete` MCP tool, it automatically calls
+`radar_update_item` to strike out the item in today's radar. Check the `radar_updated`
+field in the response to confirm this happened. If `radar_updated: false`, it means
+today's radar file didn't exist — no action needed.
+
+### Manual — when not using task_complete
+
+If you resolve an item through other means (e.g., manually updating frontmatter, or
+resolving a non-task item like an email or calendar action), call `radar_update_item`
+explicitly:
+
+```
+radar_update_item({ path: "tasks/the-task-filename.md", state: "resolved" })
+```
+
+The `path` must match the `data-task-path` attribute in the radar HTML — this is the
+task's original path at the time the radar was generated (before any move to `tasks/done/`).
+
+To un-resolve an item (e.g., if marked done by mistake), call with `state: "active"`.
+
+---
+
+## 6. Handling Missing Sources
 
 If a source isn't available:
 

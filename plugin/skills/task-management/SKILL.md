@@ -105,10 +105,15 @@ Lowercase, hyphenated, descriptive: `review-budget-proposal.md`, `book-dentist-a
 - Even simple tasks ("buy milk") get their own note — keep the body minimal if there's nothing to add
 
 **When user says "done with X" / "finished X":**
-- Find the task note in `tasks/`
-- Update frontmatter: `status: done`, add `completed: [today]`
-- Move the file from `tasks/` to `tasks/done/`
-- Confirm to the user what was completed
+- Use the `task_complete` MCP tool — it handles everything in one call:
+  - Updates frontmatter: `status: done`, adds `completed: [today]`
+  - Moves the file from `tasks/` to `tasks/done/`
+  - Auto-updates today's radar HTML (strikes out the item in both the radar strip and open loops)
+- Check the `radar_updated` field in the response:
+  - If `true`: the radar HTML was updated — the item is now struck through and dimmed
+  - If `false`: today's radar HTML doesn't exist yet (no update needed)
+  - If `radar_updated` is missing or you used `task_update` + `note_move` instead: manually call `radar_update_item` with `{ path: "tasks/original-filename.md", state: "resolved" }` to strike it out
+- Confirm to the user what was completed and whether the radar was updated
 
 **When user says "waiting on X for Y":**
 - Find or create the task note

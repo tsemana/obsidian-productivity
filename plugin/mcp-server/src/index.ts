@@ -153,7 +153,7 @@ server.tool(
 
 server.tool(
   "task_complete",
-  "Mark a task as done: sets status=done, adds completed date, and moves the file from tasks/ to tasks/done/.",
+  "Mark a task as done: sets status=done, adds completed date, moves to tasks/done/, and auto-updates today's radar HTML (strikes out the item). Returns radar_updated: true if the radar was updated.",
   {
     path: z.string().describe("Relative path to the task file in tasks/"),
   },

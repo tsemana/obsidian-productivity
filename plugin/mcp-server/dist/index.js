@@ -106,7 +106,7 @@ server.tool("task_update", "Update an existing task note. Can modify frontmatter
 }, async ({ path, frontmatter, append_body, replace_section }) => ({
     content: [{ type: "text", text: JSON.stringify(taskUpdate(requireVault(), path, { frontmatter, append_body, replace_section }, db ?? undefined), null, 2) }],
 }));
-server.tool("task_complete", "Mark a task as done: sets status=done, adds completed date, and moves the file from tasks/ to tasks/done/.", {
+server.tool("task_complete", "Mark a task as done: sets status=done, adds completed date, moves to tasks/done/, and auto-updates today's radar HTML (strikes out the item). Returns radar_updated: true if the radar was updated.", {
     path: z.string().describe("Relative path to the task file in tasks/"),
 }, async ({ path }) => ({
     content: [{ type: "text", text: JSON.stringify(taskComplete(requireVault(), path, db ?? undefined), null, 2) }],
