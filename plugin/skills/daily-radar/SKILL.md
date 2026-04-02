@@ -30,10 +30,12 @@ scannable format with direct links back to every source so the user can act imme
 
 ## 1. Data Collection
 
-**CRITICAL: NEVER use Claude.ai's `gcal_*` or `gmail_*` MCP connector tools for the
-radar.** Those connectors only have access to a single Google account. The plugin's own
-MCP tools pull from ALL registered Google accounts (personal, work, etc.) via the vault's
-SQLite database. Always use the plugin tools described below.
+**Do not automatically fall back to Claude.ai's `gcal_*` or `gmail_*` MCP connectors.**
+Those connectors only have access to a single Google account. The plugin's own MCP tools
+pull from ALL registered Google accounts (personal, work, etc.) via the vault's SQLite
+database. If none of the plugin tools below are available, **stop and ask the user** whether
+to proceed with Claude.ai connectors (which will only show partial data from one account)
+or to troubleshoot the plugin MCP server first.
 
 ### Path A — radar_generate (Preferred)
 
@@ -70,9 +72,9 @@ If neither composite tool is available, use the plugin's individual vault MCP to
 3. **`account_sync`** — trigger a sync of all registered Google accounts
 4. Then query tasks, calendar, and email data from the vault's SQLite index
 
-**Do NOT fall back to Claude.ai's `gcal_list_events`, `gmail_search_messages`, or any
-`gcal_*`/`gmail_*` connector tools.** If the plugin MCP tools are unavailable, report
-which sources are missing rather than substituting single-account connectors.
+If the plugin MCP tools are unavailable, **ask the user before using Claude.ai connectors**
+(`gcal_*`, `gmail_*`). Explain that those connectors only see one Google account and the
+radar will be incomplete. Let the user decide whether to proceed or fix the MCP server.
 
 ---
 
@@ -624,6 +626,5 @@ If a source isn't available:
 
 Add a small note at the bottom listing which sources were used.
 
-**Reminder:** Never substitute Claude.ai's `gcal_*`/`gmail_*` connectors for missing
-plugin tools. Those connectors only see one Google account and will produce an incomplete
-radar. Report the gap instead.
+**Reminder:** If plugin tools are missing, ask the user before falling back to Claude.ai
+connectors — they only see one Google account.
