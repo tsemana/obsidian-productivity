@@ -51,7 +51,14 @@ export async function fetchCalendarEvents(token, options = {}) {
         throw new Error(`Calendar list failed: ${calendarsRes.status} ${await calendarsRes.text()}`);
     }
     const calendarsData = await calendarsRes.json();
-    const calendarIds = (calendarsData.items ?? []).map((c) => c.id);
+    // Filter to calendars the user owns or has write access to.
+    // This excludes "other people's calendars" (subscribed read-only calendars)
+    // and holiday/birthday calendars that show up as reader access.
+    // To include shared calendars you can write to, we allow "owner" and "writer".
+    const ownedRoles = new Set(["owner", "writer"]);
+    const calendarIds = (calendarsData.items ?? [])
+        .filter((c) => c.primary || ownedRoles.has(c.accessRole ?? ""))
+        .map((c) => c.id);
     const allEvents = [];
     for (const calendarId of calendarIds) {
         let pageToken;
