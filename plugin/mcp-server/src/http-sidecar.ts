@@ -10,19 +10,32 @@ export interface SidecarHandlers {
   onRadarItemUpdate: (path: string, state: "resolved" | "active", email_id?: string) => void;
 }
 
+export interface SidecarOptions {
+  authToken: string;
+}
+
 /** Start the HTTP sidecar on a random port */
 export function startSidecar(
   vaultPath: string,
   handlers: SidecarHandlers,
+  options: SidecarOptions,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     server = createServer(async (req, res) => {
-      // CORS headers for local browser access
-      res.setHeader("Access-Control-Allow-Origin", "*");
+      const origin = req.headers.origin;
+      const allowOrigin = origin === "null" ? "null" : undefined;
+      if (allowOrigin) {
+        res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+      }
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Radar-Token");
 
       if (req.method === "OPTIONS") {
+        if (origin && origin !== "null") {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Forbidden origin" }));
+          return;
+        }
         res.writeHead(204);
         res.end();
         return;
@@ -36,6 +49,11 @@ export function startSidecar(
         }
 
         if (req.method === "POST" && req.url === "/sync") {
+          if (!isAuthorized(req, options.authToken)) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized" }));
+            return;
+          }
           await handlers.onSync();
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ status: "synced" }));
@@ -43,6 +61,11 @@ export function startSidecar(
         }
 
         if (req.method === "POST" && req.url === "/radar/item") {
+          if (!isAuthorized(req, options.authToken)) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized" }));
+            return;
+          }
           const body = await readBody(req);
           const { path, state, email_id } = JSON.parse(body);
           if ((!path && !email_id) || !state) {
@@ -96,9 +119,27 @@ export function stopSidecar(): void {
 
 function readBody(req: import("node:http").IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
+    const maxBytes = 64 * 1024;
+    let total = 0;
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("data", (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new Error("Request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
+}
+
+function isAuthorized(req: import("node:http").IncomingMessage, authToken: string): boolean {
+  const origin = req.headers.origin;
+  if (origin && origin !== "null") return false;
+
+  const token = req.headers["x-radar-token"];
+  return typeof token === "string" && token === authToken;
 }

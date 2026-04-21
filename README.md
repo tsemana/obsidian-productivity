@@ -100,7 +100,7 @@ Claude Code discovers plugins through marketplaces. This repo serves as its own 
 
 5. **Run `/vault-init`** and **`/start`** as with Cowork
 
-Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 32 MCP tools are available for vault operations.
+Once installed, all skills, commands, and MCP tools appear in Claude Code the same way they do in Cowork — skills are loaded into context automatically, commands show up in the `/` menu, and the 35 MCP tools are available for vault operations.
 
    **If `/mcp` shows `obsidian-vault` as failed:** Run the `npm install` step above (the MCP server needs `better-sqlite3`, a native module that must be installed locally). Then restart Claude Code.
 
@@ -119,7 +119,7 @@ Both tools work on the same files, so changes in one immediately show up in the 
 
 ## MCP Server
 
-The plugin includes an MCP server (`plugin/mcp-server/`) that provides 23 structured tools for vault operations — tasks, memory, notes, wikilinks, bases, canvas, and Obsidian config. This replaces the need for direct filesystem access via folder mapping.
+The plugin includes an MCP server (`plugin/mcp-server/`) that provides 35 structured tools for vault operations — tasks, memory, notes, wikilinks, bases, canvas, Obsidian config, integrations, and workflow helpers. This replaces the need for direct filesystem access via folder mapping.
 
 ### Setup by Client
 
@@ -151,6 +151,15 @@ Add to your `claude_desktop_config.json`:
 
 Install the plugin and select your vault folder. The MCP server resolves the vault path from the working directory automatically.
 
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OBSIDIAN_VAULT_PATH` | Yes | Absolute path to your Obsidian vault |
+| `OBSIDIAN_ENABLE_SIDECAR` | No | Set to `1` or `true` to enable the HTTP sidecar (opt-in; disabled by default) |
+
+The HTTP sidecar is a local-only server used by the Obsidian Radar plugin widget. It is secured with a per-session bearer token and only accepts requests from local file origins.
+
 ### Building from Source
 
 ```bash
@@ -166,13 +175,20 @@ npm run build
 | Vault Management | `vault_init`, `vault_health`, `vault_list` |
 | Tasks | `task_create`, `task_update`, `task_complete`, `task_list` |
 | Memory | `memory_read`, `memory_write`, `claudemd_read`, `claudemd_update` |
-| Notes | `note_read`, `note_write`, `note_search`, `note_move` |
+| Notes | `note_read`, `note_write`, `note_update`, `note_search`, `note_move` |
 | Wikilinks | `wikilink_consolidate`, `wikilink_validate` |
 | Bases & Canvas | `base_read`, `base_write`, `canvas_read`, `canvas_write` |
 | Obsidian Config | `obsidian_config_read`, `obsidian_config_write` |
-| External Accounts | `account_register`, `account_sync` |
+| External Accounts | `account_register`, `account_sync`, `account_list`, `account_remove` |
 | Radar | `radar_generate`, `radar_update_item` |
 | Composite Workflows | `radar_data`, `weekly_review`, `project_overview`, `quick_capture`, `search_and_summarize` |
+
+Notes on tool layering:
+- Prefer `note_update` as the generic patch/update primitive for existing notes; supports merging frontmatter, replacing a section by heading, appending to body, or replacing body entirely.
+- `task_update`, `memory_write`, and `claudemd_update` remain as domain-specific wrappers for common workflows.
+- `base_*` and `canvas_*` remain typed helpers over the generic note/file layer.
+
+Google accounts registered via `account_register` are stored in the SQLite index. If you use [Hermes](https://github.com/anthropics/hermes) for Google OAuth, `account_sync` will automatically import any workspace profiles found in `~/.hermes/google_workspace_profiles/` — no manual registration needed.
 
 ## Data Sources
 

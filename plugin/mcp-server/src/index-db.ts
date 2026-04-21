@@ -6,7 +6,7 @@ import { existsSync, unlinkSync } from "node:fs";
 const require = createRequire(import.meta.url);
 
 const DB_FILENAME = ".vault-index.db";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 let db: DatabaseType | null = null;
 
@@ -66,6 +66,9 @@ function runMigrations(db: DatabaseType): void {
   if (currentVersion < 3) {
     migrateV3(db);
   }
+  if (currentVersion < 4) {
+    migrateV4(db);
+  }
 
   db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
@@ -83,6 +86,9 @@ function migrateV1(db: DatabaseType): void {
       context TEXT,
       project TEXT,
       assigned_to TEXT,
+      project_slug TEXT,
+      assigned_to_slug TEXT,
+      is_task INTEGER DEFAULT 0,
       area TEXT,
       created TEXT,
       modified_at INTEGER,
@@ -160,6 +166,9 @@ function migrateV1(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_notes_due ON notes(due);
     CREATE INDEX IF NOT EXISTS idx_notes_context ON notes(context);
     CREATE INDEX IF NOT EXISTS idx_notes_project ON notes(project);
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_status_due ON notes(is_task, status, due);
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_project_slug_status ON notes(is_task, project_slug, status);
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_assigned_slug ON notes(is_task, assigned_to_slug);
     CREATE INDEX IF NOT EXISTS idx_wikilinks_target ON wikilinks(target_slug);
     CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar_events(start_time);
     CREATE INDEX IF NOT EXISTS idx_calendar_account ON calendar_events(account_id);
@@ -185,5 +194,24 @@ function migrateV3(db: DatabaseType): void {
       title, body,
       tokenize='porter unicode61'
     );
+  `);
+}
+
+function migrateV4(db: DatabaseType): void {
+  const cols = db.pragma("table_info(notes)") as { name: string }[];
+  if (!cols.some((c) => c.name === "project_slug")) {
+    db.exec(`ALTER TABLE notes ADD COLUMN project_slug TEXT;`);
+  }
+  if (!cols.some((c) => c.name === "assigned_to_slug")) {
+    db.exec(`ALTER TABLE notes ADD COLUMN assigned_to_slug TEXT;`);
+  }
+  if (!cols.some((c) => c.name === "is_task")) {
+    db.exec(`ALTER TABLE notes ADD COLUMN is_task INTEGER DEFAULT 0;`);
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_status_due ON notes(is_task, status, due);
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_project_slug_status ON notes(is_task, project_slug, status);
+    CREATE INDEX IF NOT EXISTS idx_notes_is_task_assigned_slug ON notes(is_task, assigned_to_slug);
   `);
 }

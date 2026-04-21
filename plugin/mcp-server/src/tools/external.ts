@@ -1,6 +1,103 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Database as DatabaseType } from "better-sqlite3";
 import { syncAccount } from "../google-api.js";
-import { authorizeAccount } from "../google-oauth.js";
+import { authorizeAccount, fetchAuthorizedEmail, refreshAccessToken } from "../google-oauth.js";
+import { deleteRefreshToken, loadRefreshToken, storeRefreshToken } from "../token-store.js";
+
+interface HermesWorkspaceProfileToken {
+  token?: string;
+  refresh_token?: string;
+  client_id?: string;
+  client_secret?: string;
+  expiry?: string;
+  scopes?: string[];
+  scope?: string;
+}
+
+function hermesProfilesRoot(): string {
+  return join(process.env.HERMES_HOME ?? join(homedir(), ".hermes"), "google_workspace_profiles");
+}
+
+function grantedScopes(token: HermesWorkspaceProfileToken): Set<string> {
+  const raw = token.scopes ?? token.scope ?? [];
+  const scopes = Array.isArray(raw) ? raw : String(raw).split(/\s+/);
+  return new Set(scopes.map((s) => s.trim()).filter(Boolean));
+}
+
+async function resolveAuthorizedEmail(accessToken: string): Promise<string> {
+  const gmailProfileRes = await fetch("https://www.googleapis.com/gmail/v1/users/me/profile", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (gmailProfileRes.ok) {
+    const data = await gmailProfileRes.json() as { emailAddress?: string };
+    if (data.emailAddress) return data.emailAddress;
+  }
+  return fetchAuthorizedEmail(accessToken);
+}
+
+async function autoImportHermesWorkspaceProfiles(db: DatabaseType): Promise<void> {
+  const root = hermesProfilesRoot();
+  if (!existsSync(root)) return;
+
+  const requiredScopes = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
+  ];
+
+  const dirs = readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  for (const dir of dirs) {
+    const profileId = dir.name;
+    const tokenPath = join(root, profileId, "google_token.json");
+    if (!existsSync(tokenPath)) continue;
+
+    let token: HermesWorkspaceProfileToken;
+    try {
+      token = JSON.parse(readFileSync(tokenPath, "utf-8")) as HermesWorkspaceProfileToken;
+    } catch {
+      continue;
+    }
+
+    const scopes = grantedScopes(token);
+    if (requiredScopes.some((scope) => !scopes.has(scope))) continue;
+
+    let accessToken: string | null = null;
+    if (token.refresh_token && token.client_id && token.client_secret) {
+      try {
+        const refreshed = await refreshAccessToken(token.refresh_token, token.client_id, token.client_secret);
+        accessToken = refreshed.access_token;
+        storeRefreshToken(profileId, token.refresh_token);
+      } catch {
+        accessToken = null;
+      }
+    }
+
+    if (!accessToken && token.token && token.expiry) {
+      const expiryMs = Date.parse(token.expiry);
+      if (!Number.isNaN(expiryMs) && expiryMs > Date.now() + 60_000) {
+        accessToken = token.token;
+      }
+    }
+
+    if (!accessToken) continue;
+
+    let email: string;
+    try {
+      email = await resolveAuthorizedEmail(accessToken);
+    } catch {
+      continue;
+    }
+
+    const context = profileId.replace(/^google[-_]?/, "") || null;
+    const existing = db.prepare("SELECT id FROM external_accounts WHERE id = ?").get(profileId) as { id: string } | undefined;
+    if (existing) {
+      db.prepare("UPDATE external_accounts SET account_email = ?, context = ?, refresh_token = NULL WHERE id = ?").run(email, context, profileId);
+    } else {
+      db.prepare("INSERT INTO external_accounts (id, provider, account_email, context, refresh_token) VALUES (?, 'google', ?, ?, NULL)").run(profileId, email, context);
+    }
+  }
+}
 
 /** account_register — register a Google account for syncing */
 export async function accountRegister(
@@ -31,6 +128,13 @@ export async function accountRegister(
     // OAuth2 path: open browser for consent
     try {
       const tokens = await authorizeAccount(email, clientId, clientSecret);
+      const authorizedEmail = await resolveAuthorizedEmail(tokens.access_token);
+      if (authorizedEmail.toLowerCase() !== email.toLowerCase()) {
+        return {
+          error: "email_mismatch",
+          message: `Authorized account mismatch: expected ${email}, got ${authorizedEmail}. Re-run account_register and choose the correct Google account.`,
+        };
+      }
       refreshToken = tokens.refresh_token ?? null;
     } catch (e) {
       return {
@@ -61,16 +165,22 @@ export async function accountRegister(
 
   if (existing) {
     // Re-authorization: update refresh token in place
+    if (refreshToken) {
+      storeRefreshToken(id, refreshToken);
+    }
     db.prepare(
       "UPDATE external_accounts SET refresh_token = ?, account_email = ?, context = ? WHERE id = ?",
-    ).run(refreshToken, email, context ?? null, id);
+    ).run(null, email, context ?? null, id);
     return { id, email, context: context ?? null, message: `Account "${id}" (${email}) re-authorized.` };
   }
 
   // New registration
+  if (refreshToken) {
+    storeRefreshToken(id, refreshToken);
+  }
   db.prepare(
     "INSERT INTO external_accounts (id, provider, account_email, context, refresh_token) VALUES (?, 'google', ?, ?, ?)",
-  ).run(id, email, context ?? null, refreshToken);
+  ).run(id, email, context ?? null, null);
 
   return { id, email, context: context ?? null, message: `Account "${id}" (${email}) registered.` };
 }
@@ -91,6 +201,8 @@ export async function accountSync(
     error?: string;
   }>;
 }> {
+  await autoImportHermesWorkspaceProfiles(db);
+
   let accounts: Array<{ id: string; account_email: string }>;
 
   if (options.id) {
@@ -159,7 +271,7 @@ export function accountList(
     id: row.id,
     email: row.account_email,
     context: row.context,
-    has_refresh_token: row.refresh_token !== null,
+    has_refresh_token: loadRefreshToken(row.id) !== null || row.refresh_token !== null,
     last_synced_at: row.last_synced_at
       ? new Date(row.last_synced_at).toISOString()
       : null,
@@ -197,6 +309,7 @@ export function accountRemove(
     db.prepare("DELETE FROM external_accounts WHERE id = ?").run(id);
   });
   remove();
+  deleteRefreshToken(id);
 
   return {
     id,

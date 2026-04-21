@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { isInsideVault } from "../vault.js";
 
@@ -86,7 +86,7 @@ export function obsidianConfigWrite(
     writeFileSync(tmpPath, JSON.stringify(finalContent, null, 2) + "\n", "utf-8");
     renameSync(tmpPath, fullPath);
   } catch (e) {
-    try { if (existsSync(tmpPath)) writeFileSync(tmpPath, "", "utf-8"); } catch {}
+    try { if (existsSync(tmpPath)) unlinkSync(tmpPath); } catch {}
     return { error: "write_error", message: String(e) };
   }
 

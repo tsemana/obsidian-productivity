@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { parseNote, serializeNote, matchesFrontmatter } from "../frontmatter.js";
+import { parseNote, serializeNote, mergeFrontmatter, replaceSection, matchesFrontmatter } from "../frontmatter.js";
 import { isInsideVault } from "../vault.js";
 import { vaultList } from "./vault-management.js";
 /** note_read — read any vault file */
@@ -73,6 +73,47 @@ export function noteSearch(vaultPath, options, db) {
     // Fallback: original file-scan implementation
     return noteSearchFileScan(vaultPath, query, frontmatter_filter, directory, extension, limit);
 }
+/** note_update — generic patch-style update for existing notes/files */
+export function noteUpdate(vaultPath, path, options) {
+    const readResult = noteRead(vaultPath, path);
+    if ("error" in readResult)
+        return readResult;
+    if (options.raw !== undefined) {
+        const writeResult = noteWrite(vaultPath, path, { raw: options.raw, overwrite: true });
+        if ("error" in writeResult)
+            return writeResult;
+        return { path, updated: true, frontmatter: null };
+    }
+    if (!path.endsWith(".md")) {
+        return {
+            error: "invalid_update",
+            path,
+            message: "Non-markdown files require raw content updates.",
+        };
+    }
+    let frontmatter = readResult.frontmatter ?? {};
+    let body = readResult.body;
+    if (options.frontmatter) {
+        frontmatter = mergeFrontmatter(frontmatter, options.frontmatter);
+    }
+    if (options.body !== undefined) {
+        body = options.body;
+    }
+    if (options.append_body) {
+        body = body.trimEnd() + "\n" + options.append_body + "\n";
+    }
+    if (options.replace_section) {
+        body = replaceSection(body, options.replace_section.heading, options.replace_section.content);
+    }
+    const writeResult = noteWrite(vaultPath, path, {
+        frontmatter,
+        body,
+        overwrite: true,
+    });
+    if ("error" in writeResult)
+        return writeResult;
+    return { path, updated: true, frontmatter };
+}
 function noteSearchIndexed(db, vaultPath, query, frontmatter_filter, directory, limit) {
     const conditions = [];
     const params = [];
@@ -103,7 +144,9 @@ function noteSearchIndexed(db, vaultPath, query, frontmatter_filter, directory, 
         const ftsQuery = query.split(/\s+/).map((term) => `"${term.replace(/"/g, '""')}"`).join(" ");
         const where = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
         const sql = `
-      SELECT n.path, n.frontmatter_json, bm25(notes_fts) as rank
+      SELECT n.path, n.frontmatter_json,
+        snippet(notes_fts, 1, '[', ']', '...', 12) as snippet,
+        bm25(notes_fts) as rank
       FROM notes_fts fts
       JOIN notes n ON n.rowid = fts.rowid
       WHERE notes_fts MATCH ? ${where}
@@ -119,22 +162,9 @@ function noteSearchIndexed(db, vaultPath, query, frontmatter_filter, directory, 
                 }
                 catch { }
             }
-            try {
-                const content = readFileSync(join(vaultPath, row.path), "utf-8");
-                const queryLower = query.toLowerCase();
-                const lines = content.split("\n");
-                const matches = [];
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].toLowerCase().includes(queryLower)) {
-                        matches.push({ line: i + 1, text: lines[i].trim() });
-                        if (matches.length >= 5)
-                            break;
-                    }
-                }
-                if (matches.length > 0)
-                    entry.matches = matches;
+            if (row.snippet) {
+                entry.matches = [{ line: 0, text: row.snippet }];
             }
-            catch { }
             return entry;
         });
     }

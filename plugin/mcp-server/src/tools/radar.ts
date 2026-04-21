@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { accountSync } from "./external.js";
 import { radarData } from "./composite.js";
 import type { RadarDataResult, TaskWithNextAction, WaitingTask } from "./composite.js";
+import { replaceSection } from "../frontmatter.js";
 export type { TaskRow, EventRow, EmailRow } from "./types.js";
 
 function todayStr(): string {
@@ -101,16 +102,10 @@ function writeDailyNote(vaultPath: string, date: string, data: RadarDataResult):
   const sectionHeading = "## Generated Briefing";
 
   if (existsSync(notePath)) {
-    let existing = readFileSync(notePath, "utf-8");
-    const sectionIdx = existing.indexOf(sectionHeading);
-    if (sectionIdx !== -1) {
-      // Replace everything from the section heading to end of file
-      existing = existing.slice(0, sectionIdx) + sectionHeading + "\n\n" + generatedContent;
-    } else {
-      // Append section at end
-      existing = existing.trimEnd() + "\n\n" + sectionHeading + "\n\n" + generatedContent;
-    }
-    writeFileSync(notePath, existing, "utf-8");
+    const existing = readFileSync(notePath, "utf-8");
+    const sectionBody = `\n${generatedContent}\n`;
+    const updated = replaceSection(existing, sectionHeading, sectionBody);
+    writeFileSync(notePath, updated, "utf-8");
   } else {
     writeFileSync(notePath, generatedContent, "utf-8");
   }
@@ -125,15 +120,19 @@ export async function radarGenerate(
   options: {
     date?: string;
     sidecarPort?: number;
+    sidecarToken?: string;
+    syncAccounts?: boolean;
   } = {},
 ): Promise<{ path: string; daily_note_path: string; tasks_count: number; events_count: number; emails_count: number } | { error: string; message: string }> {
   const date = options.date ?? todayStr();
 
   // Step 1: Sync all accounts
-  try {
-    await accountSync(db);
-  } catch {
-    // Continue even if sync fails — render with whatever cached data exists
+  if (options.syncAccounts !== false) {
+    try {
+      await accountSync(db);
+    } catch {
+      // Continue even if sync fails — render with whatever cached data exists
+    }
   }
 
   // Step 2: Gather all data via radarData composite tool
@@ -176,6 +175,7 @@ export async function radarGenerate(
     calendarEvents: data.calendar,
     emailHighlights: data.email,
     sidecarPort: options.sidecarPort,
+    sidecarToken: options.sidecarToken,
   });
 
   // Step 5: Write HTML file
@@ -296,8 +296,9 @@ function renderRadarHtml(data: {
   calendarEvents: EventRow[];
   emailHighlights: EmailRow[];
   sidecarPort?: number;
+  sidecarToken?: string;
 }): string {
-  const { date, overdueTasks, activeTasks, waitingTasks, calendarEvents, emailHighlights, sidecarPort } = data;
+  const { date, overdueTasks, activeTasks, waitingTasks, calendarEvents, emailHighlights, sidecarPort, sidecarToken } = data;
 
   const dateLabel = new Date(date + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -316,6 +317,7 @@ function renderRadarHtml(data: {
   const mediumPriority = activeTasks.filter((t) => t.priority === "medium" || t.priority === "low");
 
   const portMeta = sidecarPort ? `<meta name="radar-port" content="${sidecarPort}">` : "";
+  const tokenMeta = sidecarToken ? `<meta name="radar-token" content="${escapeHtml(sidecarToken)}">` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -323,6 +325,7 @@ function renderRadarHtml(data: {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 ${portMeta}
+${tokenMeta}
 <title>Daily Radar \u2014 ${date}</title>
 <style>
 :root {
@@ -501,13 +504,17 @@ ${overdueTasks.length + activeTasks.length + waitingTasks.length === 0 ? "  <p s
 
 <script>
 const PORT = document.querySelector('meta[name="radar-port"]')?.content;
+const TOKEN = document.querySelector('meta[name="radar-token"]')?.content;
 
 async function resync() {
   if (!PORT) { alert('Start Claude Code to enable sync'); return; }
   const btn = document.getElementById('syncBtn');
   btn.classList.add('syncing');
   try {
-    const res = await fetch(\`http://127.0.0.1:\${PORT}/sync\`, { method: 'POST' });
+    const res = await fetch('http://127.0.0.1:' + PORT + '/sync', {
+      method: 'POST',
+      headers: TOKEN ? { 'X-Radar-Token': TOKEN } : {},
+    });
     if (res.ok) location.reload();
     else alert('Sync failed: ' + (await res.text()));
   } catch (e) {

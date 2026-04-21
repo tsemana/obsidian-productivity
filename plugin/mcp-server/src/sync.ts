@@ -18,19 +18,41 @@ let stmts: {
   deleteNote: Statement;
 } | null = null;
 
+function extractLinkTarget(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]+)?\]\]/);
+  if (match) return match[1].trim() || null;
+  const cleaned = value.trim();
+  return cleaned || null;
+}
+
+function computeDerivedFields(fm: Record<string, unknown>): {
+  projectSlug: string | null;
+  assignedToSlug: string | null;
+  isTask: number;
+} {
+  const projectSlug = extractLinkTarget(fm.project);
+  const assignedToSlug = extractLinkTarget(fm["assigned-to"]);
+  const tags = Array.isArray(fm.tags) ? fm.tags : [];
+  const isTask = tags.includes("task") ? 1 : 0;
+  return { projectSlug, assignedToSlug, isTask };
+}
+
 function getStatements(db: DatabaseType) {
   if (cachedDb === db && stmts) return stmts;
   cachedDb = db;
   stmts = {
     upsertNote: db.prepare(`
       INSERT INTO notes (path, title, tags, status, priority, due, context, project,
-        assigned_to, area, created, modified_at, content_hash, body_preview, frontmatter_json)
+        assigned_to, project_slug, assigned_to_slug, is_task, area, created, modified_at, content_hash, body_preview, frontmatter_json)
       VALUES (@path, @title, @tags, @status, @priority, @due, @context, @project,
-        @assigned_to, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
+        @assigned_to, @project_slug, @assigned_to_slug, @is_task, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
       ON CONFLICT(path) DO UPDATE SET
         title=excluded.title, tags=excluded.tags, status=excluded.status,
         priority=excluded.priority, due=excluded.due, context=excluded.context,
-        project=excluded.project, assigned_to=excluded.assigned_to, area=excluded.area,
+        project=excluded.project, assigned_to=excluded.assigned_to,
+        project_slug=excluded.project_slug, assigned_to_slug=excluded.assigned_to_slug,
+        is_task=excluded.is_task, area=excluded.area,
         created=excluded.created, modified_at=excluded.modified_at,
         content_hash=excluded.content_hash, body_preview=excluded.body_preview,
         frontmatter_json=excluded.frontmatter_json
@@ -110,6 +132,7 @@ function extractNoteRow(
   const fm = parsed.frontmatter ?? {};
   const hash = contentHash(content);
   const bodyPreview = parsed.body.slice(0, 500);
+  const derived = computeDerivedFields(fm);
 
   return {
     path: filePath,
@@ -121,6 +144,9 @@ function extractNoteRow(
     context: fmStr(fm.context),
     project: fmStr(fm.project),
     assigned_to: fmStr(fm["assigned-to"]),
+    project_slug: derived.projectSlug,
+    assigned_to_slug: derived.assignedToSlug,
+    is_task: derived.isTask,
     area: fmStr(fm.area),
     created: fmStr(fm.created),
     modified_at: mtime,
@@ -136,13 +162,19 @@ export function reindexFile(
   db: DatabaseType,
   vaultPath: string,
   filePath: string,
+  preloaded?: { content: string; mtime: number },
 ): void {
   const fullPath = join(vaultPath, filePath);
   let content: string;
   let mtime: number;
   try {
-    content = readFileSync(fullPath, "utf-8");
-    mtime = statSync(fullPath).mtimeMs;
+    if (preloaded) {
+      content = preloaded.content;
+      mtime = preloaded.mtime;
+    } else {
+      content = readFileSync(fullPath, "utf-8");
+      mtime = statSync(fullPath).mtimeMs;
+    }
   } catch {
     removeFile(db, filePath);
     return;
@@ -156,7 +188,9 @@ export function reindexFile(
     s.upsertNote.run({
       path: row.path, title: row.title, tags: row.tags, status: row.status,
       priority: row.priority, due: row.due, context: row.context, project: row.project,
-      assigned_to: row.assigned_to, area: row.area, created: row.created,
+      assigned_to: row.assigned_to, project_slug: row.project_slug,
+      assigned_to_slug: row.assigned_to_slug, is_task: row.is_task,
+      area: row.area, created: row.created,
       modified_at: row.modified_at, content_hash: row.content_hash,
       body_preview: row.body_preview, frontmatter_json: row.frontmatter_json,
     });
@@ -192,13 +226,15 @@ export function fullScan(db: DatabaseType, vaultPath: string): { indexed: number
 
   const upsertNote = db.prepare(`
     INSERT INTO notes (path, title, tags, status, priority, due, context, project,
-      assigned_to, area, created, modified_at, content_hash, body_preview, frontmatter_json)
+      assigned_to, project_slug, assigned_to_slug, is_task, area, created, modified_at, content_hash, body_preview, frontmatter_json)
     VALUES (@path, @title, @tags, @status, @priority, @due, @context, @project,
-      @assigned_to, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
+      @assigned_to, @project_slug, @assigned_to_slug, @is_task, @area, @created, @modified_at, @content_hash, @body_preview, @frontmatter_json)
     ON CONFLICT(path) DO UPDATE SET
       title=excluded.title, tags=excluded.tags, status=excluded.status,
       priority=excluded.priority, due=excluded.due, context=excluded.context,
-      project=excluded.project, assigned_to=excluded.assigned_to, area=excluded.area,
+      project=excluded.project, assigned_to=excluded.assigned_to,
+      project_slug=excluded.project_slug, assigned_to_slug=excluded.assigned_to_slug,
+      is_task=excluded.is_task, area=excluded.area,
       created=excluded.created, modified_at=excluded.modified_at,
       content_hash=excluded.content_hash, body_preview=excluded.body_preview,
       frontmatter_json=excluded.frontmatter_json
@@ -233,6 +269,9 @@ export function fullScan(db: DatabaseType, vaultPath: string): { indexed: number
         context: row.context,
         project: row.project,
         assigned_to: row.assigned_to,
+        project_slug: row.project_slug,
+        assigned_to_slug: row.assigned_to_slug,
+        is_task: row.is_task,
         area: row.area,
         created: row.created,
         modified_at: row.modified_at,
@@ -294,7 +333,7 @@ export function incrementalSync(
         }
         const hash = contentHash(content);
         if (hash !== existing.content_hash) {
-          reindexFile(db, vaultPath, filePath);
+          reindexFile(db, vaultPath, filePath, { content, mtime });
           updated++;
         } else {
           // Only mtime changed, update it

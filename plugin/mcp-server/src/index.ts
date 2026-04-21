@@ -6,7 +6,7 @@ import { resolveVaultPath } from "./vault.js";
 
 // Tool implementations
 import { vaultInit, vaultHealth, vaultList } from "./tools/vault-management.js";
-import { noteRead, noteWrite, noteSearch, noteMove } from "./tools/notes.js";
+import { noteRead, noteWrite, noteUpdate, noteSearch, noteMove } from "./tools/notes.js";
 import { obsidianConfigRead, obsidianConfigWrite } from "./tools/obsidian-config.js";
 import { taskCreate, taskUpdate, taskComplete, taskList } from "./tools/tasks.js";
 import { memoryRead, memoryWrite, claudemdRead, claudemdUpdate } from "./tools/memory.js";
@@ -19,13 +19,14 @@ import { accountRegister, accountSync, accountList, accountRemove } from "./tool
 import { radarGenerate, radarUpdateItem } from "./tools/radar.js";
 import { loadEnvSchema } from "./env.js";
 import { radarData, weeklyReview, projectOverview, quickCapture, searchAndSummarize } from "./tools/composite.js";
+import { randomBytes } from "node:crypto";
 
 const server = new McpServer({
   name: "obsidian-vault",
   version: "0.8.0",
 });
 
-// Load OAuth credentials from .env.schema (exec() directives → process.env)
+// Load literal env assignments from local .env files (no shell execution)
 loadEnvSchema();
 
 // Resolve vault path once at startup
@@ -34,6 +35,8 @@ const vaultPath = resolveVaultPath();
 // Initialize SQLite index
 let db: import("better-sqlite3").Database | null = null;
 let sidecarPort: number | undefined;
+const sidecarEnabled = ["1", "true", "yes"].includes((process.env.OBSIDIAN_ENABLE_SIDECAR ?? "").toLowerCase());
+const sidecarToken = sidecarEnabled ? randomBytes(24).toString("hex") : undefined;
 
 if (vaultPath) {
   try {
@@ -45,22 +48,29 @@ if (vaultPath) {
     db = null;
   }
 
-  // Start HTTP sidecar
-  try {
-    sidecarPort = await startSidecar(vaultPath, {
-      onSync: async () => {
-        if (db) {
-          await accountSync(db);
-          await radarGenerate(db, vaultPath, { sidecarPort });
-        }
-      },
-      onRadarItemUpdate: (path, state, email_id) => {
-        radarUpdateItem(vaultPath, { path, state, email_id });
-      },
-    });
-    console.error(`HTTP sidecar listening on port ${sidecarPort}`);
-  } catch (e) {
-    console.error("HTTP sidecar failed to start:", e);
+  // Start HTTP sidecar only when explicitly enabled
+  if (sidecarEnabled && sidecarToken) {
+    try {
+      sidecarPort = await startSidecar(vaultPath, {
+        onSync: async () => {
+          if (db) {
+            await radarGenerate(db, vaultPath, {
+              sidecarPort,
+              sidecarToken,
+              syncAccounts: true,
+            });
+          }
+        },
+        onRadarItemUpdate: (path, state, email_id) => {
+          radarUpdateItem(vaultPath, { path, state, email_id });
+        },
+      }, {
+        authToken: sidecarToken,
+      });
+      console.error(`HTTP sidecar listening on port ${sidecarPort}`);
+    } catch (e) {
+      console.error("HTTP sidecar failed to start:", e);
+    }
   }
 }
 
@@ -272,6 +282,29 @@ server.tool(
 );
 
 server.tool(
+  "note_update",
+  "Generic patch-style update for an existing note or file. For markdown files, can merge frontmatter, append body text, replace a section, or replace the full body. For non-markdown files, use raw content.",
+  {
+    path: z.string().describe("Relative path from vault root"),
+    frontmatter: z.record(z.string(), z.unknown()).optional().describe("Frontmatter fields to merge (markdown files only)"),
+    append_body: z.string().optional().describe("Text to append to the markdown body"),
+    replace_section: z.object({
+      heading: z.string(),
+      content: z.string(),
+    }).optional().describe("Replace a markdown heading section"),
+    body: z.string().optional().describe("Replace the full markdown body"),
+    raw: z.string().optional().describe("Replace the full raw file content (required for non-markdown files)"),
+  },
+  async ({ path, ...options }) => {
+    const result = noteUpdate(requireVault(), path, options);
+    if (!("error" in result) && db && path.endsWith(".md")) {
+      reindexFile(db, requireVault(), path);
+    }
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
   "note_search",
   "Search vault notes by text content and/or frontmatter properties. Returns matching files with context.",
   {
@@ -294,7 +327,14 @@ server.tool(
     to_path: z.string().describe("Destination relative path"),
   },
   async ({ from_path, to_path }) => ({
-    content: [{ type: "text", text: JSON.stringify(noteMove(requireVault(), from_path, to_path), null, 2) }],
+    content: [{ type: "text", text: JSON.stringify((() => {
+      const result = noteMove(requireVault(), from_path, to_path);
+      if (!("error" in result) && db) {
+        reindexFile(db, requireVault(), from_path);
+        reindexFile(db, requireVault(), to_path);
+      }
+      return result;
+    })(), null, 2) }],
   }),
 );
 
@@ -469,7 +509,7 @@ server.tool(
   },
   async ({ date }) => {
     if (!db) return { content: [{ type: "text", text: JSON.stringify({ error: "no_database", message: "SQLite not initialized" }) }] };
-    const result = await radarGenerate(db, requireVault(), { date, sidecarPort });
+    const result = await radarGenerate(db, requireVault(), { date, sidecarPort, sidecarToken, syncAccounts: true });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   },
 );

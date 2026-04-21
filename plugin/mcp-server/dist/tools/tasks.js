@@ -121,8 +121,8 @@ function taskListIndexed(db, vaultPath, options) {
     const { status, priority, context, project, due_before, due_after, include_done = false, assigned_to, } = options;
     const conditions = [];
     const params = [];
-    // Must be a task (tags contains "task")
-    conditions.push("(tags LIKE '%\"task\"%' OR tags LIKE '%task%')");
+    // Must be a task
+    conditions.push("is_task = 1");
     // Path scope: tasks/ but exclude tasks/done/ unless include_done
     if (include_done) {
         conditions.push("(path LIKE 'tasks/%.md' OR path LIKE 'tasks/done/%.md')");
@@ -150,15 +150,17 @@ function taskListIndexed(db, vaultPath, options) {
         conditions.push("context = ?");
         params.push(context);
     }
-    // Project filter (substring match)
+    // Project filter
     if (project) {
-        conditions.push("project LIKE ?");
-        params.push(`%${project}%`);
+        const normalizedProject = project.replace(/^\[\[|\]\]$/g, "").split("|")[0].trim();
+        conditions.push("(project_slug = ? OR project LIKE ?)");
+        params.push(normalizedProject, `%${normalizedProject}%`);
     }
-    // Assigned-to filter (substring match)
+    // Assigned-to filter
     if (assigned_to) {
-        conditions.push("assigned_to LIKE ?");
-        params.push(`%${assigned_to}%`);
+        const normalizedAssignedTo = assigned_to.replace(/^\[\[|\]\]$/g, "").split("|")[0].trim();
+        conditions.push("(assigned_to_slug = ? OR assigned_to LIKE ?)");
+        params.push(normalizedAssignedTo, `%${normalizedAssignedTo}%`);
     }
     // Due date filters
     if (due_before) {

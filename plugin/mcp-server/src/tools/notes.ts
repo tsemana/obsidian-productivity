@@ -102,6 +102,61 @@ export function noteSearch(
   return noteSearchFileScan(vaultPath, query, frontmatter_filter, directory, extension, limit);
 }
 
+/** note_update — generic patch-style update for existing notes/files */
+export function noteUpdate(
+  vaultPath: string,
+  path: string,
+  options: {
+    frontmatter?: Record<string, unknown>;
+    append_body?: string;
+    replace_section?: { heading: string; content: string };
+    body?: string;
+    raw?: string;
+  },
+): { path: string; updated: boolean; frontmatter?: Record<string, unknown> | null } | { error: string; path: string; message: string } {
+  const readResult = noteRead(vaultPath, path);
+  if ("error" in readResult) return readResult;
+
+  if (options.raw !== undefined) {
+    const writeResult = noteWrite(vaultPath, path, { raw: options.raw, overwrite: true });
+    if ("error" in writeResult) return writeResult;
+    return { path, updated: true, frontmatter: null };
+  }
+
+  if (!path.endsWith(".md")) {
+    return {
+      error: "invalid_update",
+      path,
+      message: "Non-markdown files require raw content updates.",
+    };
+  }
+
+  let frontmatter = readResult.frontmatter ?? {};
+  let body = readResult.body;
+
+  if (options.frontmatter) {
+    frontmatter = mergeFrontmatter(frontmatter, options.frontmatter);
+  }
+  if (options.body !== undefined) {
+    body = options.body;
+  }
+  if (options.append_body) {
+    body = body.trimEnd() + "\n" + options.append_body + "\n";
+  }
+  if (options.replace_section) {
+    body = replaceSection(body, options.replace_section.heading, options.replace_section.content);
+  }
+
+  const writeResult = noteWrite(vaultPath, path, {
+    frontmatter,
+    body,
+    overwrite: true,
+  });
+  if ("error" in writeResult) return writeResult;
+
+  return { path, updated: true, frontmatter };
+}
+
 function noteSearchIndexed(
   db: import("better-sqlite3").Database,
   vaultPath: string,
@@ -141,7 +196,9 @@ function noteSearchIndexed(
     const ftsQuery = query.split(/\s+/).map((term) => `"${term.replace(/"/g, '""')}"`).join(" ");
     const where = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
     const sql = `
-      SELECT n.path, n.frontmatter_json, bm25(notes_fts) as rank
+      SELECT n.path, n.frontmatter_json,
+        snippet(notes_fts, 1, '[', ']', '...', 12) as snippet,
+        bm25(notes_fts) as rank
       FROM notes_fts fts
       JOIN notes n ON n.rowid = fts.rowid
       WHERE notes_fts MATCH ? ${where}
@@ -151,6 +208,7 @@ function noteSearchIndexed(
     const rows = db.prepare(sql).all(ftsQuery, ...params, limit) as Array<{
       path: string;
       frontmatter_json: string | null;
+      snippet: string | null;
       rank: number;
     }>;
 
@@ -159,19 +217,9 @@ function noteSearchIndexed(
       if (row.frontmatter_json) {
         try { entry.frontmatter = JSON.parse(row.frontmatter_json); } catch {}
       }
-      try {
-        const content = readFileSync(join(vaultPath, row.path), "utf-8");
-        const queryLower = query.toLowerCase();
-        const lines = content.split("\n");
-        const matches: Array<{ line: number; text: string }> = [];
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].toLowerCase().includes(queryLower)) {
-            matches.push({ line: i + 1, text: lines[i].trim() });
-            if (matches.length >= 5) break;
-          }
-        }
-        if (matches.length > 0) entry.matches = matches;
-      } catch {}
+      if (row.snippet) {
+        entry.matches = [{ line: 0, text: row.snippet }];
+      }
       return entry;
     });
   } else {

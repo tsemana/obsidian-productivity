@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { isInsideVault } from "../vault.js";
 const ALLOWED_CONFIG_FILES = [
@@ -71,7 +71,7 @@ export function obsidianConfigWrite(vaultPath, filename, content, merge = true) 
     catch (e) {
         try {
             if (existsSync(tmpPath))
-                writeFileSync(tmpPath, "", "utf-8");
+                unlinkSync(tmpPath);
         }
         catch { }
         return { error: "write_error", message: String(e) };

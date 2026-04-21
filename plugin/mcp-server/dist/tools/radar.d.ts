@@ -4,6 +4,8 @@ export type { TaskRow, EventRow, EmailRow } from "./types.js";
 export declare function radarGenerate(db: DatabaseType, vaultPath: string, options?: {
     date?: string;
     sidecarPort?: number;
+    sidecarToken?: string;
+    syncAccounts?: boolean;
 }): Promise<{
     path: string;
     daily_note_path: string;

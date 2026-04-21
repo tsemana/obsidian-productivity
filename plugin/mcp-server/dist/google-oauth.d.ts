@@ -4,6 +4,7 @@ export interface TokenResponse {
     expires_in: number;
     token_type: string;
 }
+export declare function fetchAuthorizedEmail(accessToken: string): Promise<string>;
 /** Build the Google OAuth consent URL */
 export declare function generateAuthUrl(clientId: string, redirectUri: string, email: string, state: string): string;
 /** Exchange an authorization code for tokens */

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import open from "open";
 const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo";
 const SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -10,6 +11,19 @@ const SCOPES = [
 const CALLBACK_PORT_START = 8914;
 const CALLBACK_PORT_END = 8924;
 const AUTH_TIMEOUT_MS = 120_000;
+export async function fetchAuthorizedEmail(accessToken) {
+    const res = await fetch(GOOGLE_USERINFO_ENDPOINT, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+        throw new Error(`Failed to fetch authorized account identity (${res.status}): ${await res.text()}`);
+    }
+    const data = await res.json();
+    if (!data.email || data.email_verified !== true) {
+        throw new Error("Authorized Google account did not return a verified email address.");
+    }
+    return data.email;
+}
 /** Build the Google OAuth consent URL */
 export function generateAuthUrl(clientId, redirectUri, email, state) {
     const params = new URLSearchParams({

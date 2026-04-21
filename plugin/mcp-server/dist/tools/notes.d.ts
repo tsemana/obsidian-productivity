@@ -41,6 +41,25 @@ export declare function noteSearch(vaultPath: string, options: {
     }>;
     count: number;
 };
+/** note_update — generic patch-style update for existing notes/files */
+export declare function noteUpdate(vaultPath: string, path: string, options: {
+    frontmatter?: Record<string, unknown>;
+    append_body?: string;
+    replace_section?: {
+        heading: string;
+        content: string;
+    };
+    body?: string;
+    raw?: string;
+}): {
+    path: string;
+    updated: boolean;
+    frontmatter?: Record<string, unknown> | null;
+} | {
+    error: string;
+    path: string;
+    message: string;
+};
 /** note_move — move a file within the vault */
 export declare function noteMove(vaultPath: string, fromPath: string, toPath: string): {
     from_path: string;

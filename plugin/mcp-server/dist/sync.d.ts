@@ -1,6 +1,9 @@
 import type { Database as DatabaseType } from "better-sqlite3";
 /** Index a single file into the database (upsert) */
-export declare function reindexFile(db: DatabaseType, vaultPath: string, filePath: string): void;
+export declare function reindexFile(db: DatabaseType, vaultPath: string, filePath: string, preloaded?: {
+    content: string;
+    mtime: number;
+}): void;
 /** Full scan — index every .md file in the vault */
 export declare function fullScan(db: DatabaseType, vaultPath: string): {
     indexed: number;

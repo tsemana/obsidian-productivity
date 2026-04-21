@@ -287,7 +287,7 @@ export async function radarData(
   // Overdue tasks
   const overdueRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active' AND due IS NOT NULL AND due < ?
+    WHERE is_task = 1 AND status = 'active' AND due IS NOT NULL AND due < ?
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY due ASC
   `).all(date) as TaskRow[];
@@ -300,7 +300,7 @@ export async function radarData(
   // Active tasks
   const activeRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active' AND (due IS NULL OR due >= ?)
+    WHERE is_task = 1 AND status = 'active' AND (due IS NULL OR due >= ?)
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
   `).all(date) as TaskRow[];
@@ -313,7 +313,7 @@ export async function radarData(
   // Waiting tasks
   const waitingRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'waiting'
+    WHERE is_task = 1 AND status = 'waiting'
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY due ASC NULLS LAST
   `).all() as TaskRow[];
@@ -338,18 +338,18 @@ export async function radarData(
 
   // Fetch all active tasks that belong to any known project, ranked by priority
   const allProjectTasks = db.prepare(`
-    SELECT path, title, priority, due, body_preview, frontmatter_json, project FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active'
+    SELECT path, title, priority, due, body_preview, frontmatter_json, project, project_slug FROM notes
+    WHERE is_task = 1 AND status = 'active'
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    AND project IS NOT NULL
+    AND project_slug IS NOT NULL
     ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
-  `).all() as (TaskRow & { project: string })[];
+  `).all() as (TaskRow & { project: string; project_slug: string | null })[];
 
   // Index: for each slug, find the first (highest priority) matching task
-  const topTaskBySlug = new Map<string, TaskRow & { project: string }>();
+  const topTaskBySlug = new Map<string, TaskRow & { project: string; project_slug: string | null }>();
   for (const task of allProjectTasks) {
     for (const slug of projectSlugs) {
-      if (!topTaskBySlug.has(slug) && (task.project === slug || task.project.includes(slug))) {
+      if (!topTaskBySlug.has(slug) && task.project_slug === slug) {
         topTaskBySlug.set(slug, task);
       }
     }
@@ -492,7 +492,7 @@ export async function weeklyReview(
   // Active tasks (all)
   const activeRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active'
+    WHERE is_task = 1 AND status = 'active'
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
   `).all() as TaskRow[];
@@ -505,7 +505,7 @@ export async function weeklyReview(
   // Waiting tasks with 2-week lookahead
   const waitingRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'waiting'
+    WHERE is_task = 1 AND status = 'waiting'
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY due ASC NULLS LAST
   `).all() as TaskRow[];
@@ -533,25 +533,25 @@ export async function weeklyReview(
 
     const activeCount = (db.prepare(`
       SELECT COUNT(*) as cnt FROM notes
-      WHERE tags LIKE '%"task"%' AND status = 'active'
-      AND (project = ? OR project LIKE ?)
+      WHERE is_task = 1 AND status = 'active'
+      AND project_slug = ?
       AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    `).get(slug, `%${slug}%`) as { cnt: number }).cnt;
+    `).get(slug) as { cnt: number }).cnt;
 
     const waitingCount = (db.prepare(`
       SELECT COUNT(*) as cnt FROM notes
-      WHERE tags LIKE '%"task"%' AND status = 'waiting'
-      AND (project = ? OR project LIKE ?)
+      WHERE is_task = 1 AND status = 'waiting'
+      AND project_slug = ?
       AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
-    `).get(slug, `%${slug}%`) as { cnt: number }).cnt;
+    `).get(slug) as { cnt: number }).cnt;
 
     const topTask = db.prepare(`
       SELECT body_preview FROM notes
-      WHERE tags LIKE '%"task"%' AND status = 'active'
-      AND (project = ? OR project LIKE ?)
+      WHERE is_task = 1 AND status = 'active'
+      AND project_slug = ?
       AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
       ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END LIMIT 1
-    `).get(slug, `%${slug}%`) as { body_preview: string | null } | undefined;
+    `).get(slug) as { body_preview: string | null } | undefined;
 
     const hasNextAction = topTask ? extractNextAction(topTask.body_preview) !== null : false;
 
@@ -698,11 +698,11 @@ export async function projectOverview(
   // Active tasks matching project slug
   const activeRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'active'
-    AND (project = ? OR project LIKE ?)
+    WHERE is_task = 1 AND status = 'active'
+    AND project_slug = ?
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due ASC NULLS LAST
-  `).all(slug, `%${slug}%`) as TaskRow[];
+  `).all(slug) as TaskRow[];
 
   const activeTasks: TaskWithNextAction[] = activeRaw.map((t) => ({
     ...t,
@@ -712,11 +712,11 @@ export async function projectOverview(
   // Waiting tasks
   const waitingRaw = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'waiting'
-    AND (project = ? OR project LIKE ?)
+    WHERE is_task = 1 AND status = 'waiting'
+    AND project_slug = ?
     AND path LIKE 'tasks/%' AND path NOT LIKE 'tasks/done/%'
     ORDER BY due ASC NULLS LAST
-  `).all(slug, `%${slug}%`) as TaskRow[];
+  `).all(slug) as TaskRow[];
 
   const waitingTasks = buildWaitingTasks(db, waitingRaw, 14, todayStr());
 
@@ -724,12 +724,12 @@ export async function projectOverview(
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const completedRecent = db.prepare(`
     SELECT path, title, priority, due, body_preview, frontmatter_json FROM notes
-    WHERE tags LIKE '%"task"%' AND status = 'done'
-    AND (project = ? OR project LIKE ?)
+    WHERE is_task = 1 AND status = 'done'
+    AND project_slug = ?
     AND (due >= ? OR created >= ?)
     ORDER BY due DESC NULLS LAST
     LIMIT 20
-  `).all(slug, `%${slug}%`, thirtyDaysAgo, thirtyDaysAgo) as TaskRow[];
+  `).all(slug, thirtyDaysAgo, thirtyDaysAgo) as TaskRow[];
 
   // People: wikilink targets from the project note that are in memory/people/
   interface WikilinkRow {

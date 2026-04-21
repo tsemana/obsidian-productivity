@@ -1,5 +1,5 @@
-import { existsSync, statSync, readdirSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, statSync, readdirSync, mkdirSync, realpathSync } from "node:fs";
+import { join, resolve, relative, sep, isAbsolute } from "node:path";
 /**
  * Resolve the vault path from CLI args, env var, or CWD.
  * Returns the resolved absolute path, or null if none found.
@@ -23,10 +23,21 @@ export function resolveVaultPath() {
     }
     // Priority 3: Current working directory (Cowork fallback)
     const cwd = process.cwd();
-    if (existsSync(cwd) && statSync(cwd).isDirectory()) {
+    if (existsSync(cwd) && statSync(cwd).isDirectory() && looksLikeVault(cwd)) {
         return cwd;
     }
     return null;
+}
+function looksLikeVault(path) {
+    const markers = [
+        ".obsidian",
+        "CLAUDE.md",
+        "tasks",
+        "daily",
+        "memory",
+        "templates",
+    ];
+    return markers.some((marker) => existsSync(join(path, marker)));
 }
 /** Standard vault directories created by /start */
 export const VAULT_DIRECTORIES = [
@@ -88,7 +99,27 @@ export function vaultAbsPath(vaultPath, relativePath) {
 }
 /** Validate that a relative path doesn't escape the vault (path traversal prevention) */
 export function isInsideVault(vaultPath, relativePath) {
-    const resolved = resolve(vaultPath, relativePath);
-    return resolved.startsWith(resolve(vaultPath));
+    if (!relativePath || isAbsolute(relativePath))
+        return false;
+    const vaultResolved = resolve(vaultPath);
+    const candidateResolved = resolve(vaultResolved, relativePath);
+    const rel = relative(vaultResolved, candidateResolved);
+    if (rel === "")
+        return true;
+    if (rel === ".." || rel.startsWith(`..${sep}`))
+        return false;
+    try {
+        const vaultReal = realpathSync(vaultResolved);
+        const existingReal = existsSync(candidateResolved)
+            ? realpathSync(candidateResolved)
+            : realpathSync(join(candidateResolved, ".."));
+        const realRel = relative(vaultReal, existingReal);
+        if (realRel === "")
+            return true;
+        return !(realRel === ".." || realRel.startsWith(`..${sep}`));
+    }
+    catch {
+        return true;
+    }
 }
 //# sourceMappingURL=vault.js.map

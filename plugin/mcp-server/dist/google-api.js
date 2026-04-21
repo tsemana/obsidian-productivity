@@ -1,5 +1,56 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { refreshAccessToken } from "./google-oauth.js";
+import { loadRefreshToken, storeRefreshToken } from "./token-store.js";
+function hermesProfilesRoot() {
+    return join(process.env.HERMES_HOME ?? join(homedir(), ".hermes"), "google_workspace_profiles");
+}
+function parseProfileToken(profileDir) {
+    const path = join(profileDir, "google_token.json");
+    if (!existsSync(path))
+        return null;
+    try {
+        return JSON.parse(readFileSync(path, "utf-8"));
+    }
+    catch {
+        return null;
+    }
+}
+function grantedScopes(token) {
+    if (!token)
+        return new Set();
+    const raw = token.scopes ?? token.scope ?? [];
+    const scopes = Array.isArray(raw) ? raw : String(raw).split(/\s+/);
+    return new Set(scopes.map((s) => s.trim()).filter(Boolean));
+}
+function findHermesProfileToken(options = {}) {
+    const root = hermesProfilesRoot();
+    if (!existsSync(root))
+        return null;
+    const dirs = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    const requiredScopes = options.requiredScopes ?? [];
+    const exactCandidates = options.accountId ? dirs.filter((dir) => dir === options.accountId) : [];
+    const orderedDirs = [...exactCandidates, ...dirs.filter((dir) => dir !== options.accountId)];
+    for (const dir of orderedDirs) {
+        const token = parseProfileToken(join(root, dir));
+        if (!token)
+            continue;
+        const scopes = grantedScopes(token);
+        if (requiredScopes.some((scope) => !scopes.has(scope)))
+            continue;
+        if (options.accountEmail) {
+            const tokenEmail = token.account?.trim().toLowerCase() ?? "";
+            if (tokenEmail && tokenEmail !== options.accountEmail.trim().toLowerCase())
+                continue;
+        }
+        return { profileId: dir, token };
+    }
+    return null;
+}
 // ─── Token Acquisition ────────────────────────────────────────────────────
 /**
  * Get an access token for a Google account.
@@ -15,14 +66,36 @@ export async function getAccessToken(db, accountId) {
     }
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    let refreshToken = loadRefreshToken(accountId);
+    const hermesProfile = findHermesProfileToken({ accountId, accountEmail: account.account_email });
+    const hermesClientId = hermesProfile?.token.client_id ?? null;
+    const hermesClientSecret = hermesProfile?.token.client_secret ?? null;
+    const effectiveClientId = clientId || hermesClientId || undefined;
+    const effectiveClientSecret = clientSecret || hermesClientSecret || undefined;
+    if (!refreshToken && account.refresh_token) {
+        refreshToken = account.refresh_token;
+        storeRefreshToken(accountId, account.refresh_token);
+        db.prepare("UPDATE external_accounts SET refresh_token = NULL WHERE id = ?").run(accountId);
+    }
+    if (!refreshToken && hermesProfile?.token.refresh_token) {
+        refreshToken = hermesProfile.token.refresh_token;
+        storeRefreshToken(accountId, refreshToken);
+    }
     // OAuth2 path: use stored refresh token
-    if (account.refresh_token && clientId && clientSecret) {
-        const tokens = await refreshAccessToken(account.refresh_token, clientId, clientSecret);
+    if (refreshToken && effectiveClientId && effectiveClientSecret) {
+        const tokens = await refreshAccessToken(refreshToken, effectiveClientId, effectiveClientSecret);
         return tokens.access_token;
     }
+    // Hermes profile token fallback: use cached access token if still valid
+    if (hermesProfile?.token.token && hermesProfile.token.expiry) {
+        const expiryMs = Date.parse(hermesProfile.token.expiry);
+        if (!Number.isNaN(expiryMs) && expiryMs > Date.now() + 60_000) {
+            return hermesProfile.token.token;
+        }
+    }
     // Fallback: gcloud CLI
-    if (account.refresh_token && (!clientId || !clientSecret)) {
-        console.error(`Warning: Account "${accountId}" has a refresh token but GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not set. Falling back to gcloud.`);
+    if (refreshToken && (!effectiveClientId || !effectiveClientSecret)) {
+        console.error(`Warning: Account "${accountId}" has a refresh token but no OAuth client credentials are available in env or Hermes profile storage. Falling back to gcloud.`);
     }
     try {
         const token = execFileSync("gcloud", ["auth", "print-access-token", `--account=${account.account_email}`], { encoding: "utf-8", timeout: 15000 }).trim();
